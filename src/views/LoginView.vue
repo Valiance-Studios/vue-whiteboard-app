@@ -77,6 +77,7 @@ export default defineComponent({
     async onSignIn(): Promise<void> {
       this.signingIn = true;
       this.errorMessage = null;
+
       try {
         await this.authStore.signInWithGoogle();
         await this.$router.replace(this.redirectPath ?? {name: RouteName.BoardCollection});

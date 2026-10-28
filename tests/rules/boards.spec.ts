@@ -1,12 +1,9 @@
+import type {RulesTestContext, RulesTestEnvironment} from '@firebase/rules-unit-testing';
+import type {Firestore} from 'firebase/firestore';
+
 import {readFileSync} from 'node:fs';
 import {afterAll, beforeAll, beforeEach, describe, it} from 'vitest';
-import {
-  assertFails,
-  assertSucceeds,
-  initializeTestEnvironment,
-  type RulesTestContext,
-  type RulesTestEnvironment,
-} from '@firebase/rules-unit-testing';
+import {assertFails, assertSucceeds, initializeTestEnvironment} from '@firebase/rules-unit-testing';
 import {
   addDoc,
   collection,
@@ -20,7 +17,6 @@ import {
   Timestamp,
   updateDoc,
   where,
-  type Firestore,
 } from 'firebase/firestore';
 
 const OWNER = 'alice';

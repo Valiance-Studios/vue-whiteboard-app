@@ -1,7 +1,9 @@
-import {defineStore} from 'pinia';
-import {GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User} from 'firebase/auth';
-import {auth} from '@/firebase';
 import type {SessionUser} from '@/types/session';
+import type {User} from 'firebase/auth';
+
+import {defineStore} from 'pinia';
+import {auth} from '@/firebase';
+import {GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut as signOutFirebase} from 'firebase/auth';
 
 interface AuthState {
   user: SessionUser | null;
@@ -45,7 +47,7 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async signOut(): Promise<void> {
-      await signOut(auth);
+      await signOutFirebase(auth);
       this.user = null;
     },
   },

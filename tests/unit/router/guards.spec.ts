@@ -1,6 +1,7 @@
+import type {RouteLocationNormalized} from 'vue-router';
+
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {createPinia, setActivePinia} from 'pinia';
-import type {RouteLocationNormalized} from 'vue-router';
 import {sessionGuard} from '@/router/guards';
 import {RouteName} from '@/router/routes';
 import {useAuthStore} from '@/stores/auth';
