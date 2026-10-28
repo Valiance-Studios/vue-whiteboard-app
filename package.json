@@ -11,7 +11,7 @@
     "build": "vue-tsc --build && vite build",
     "preview": "vite preview",
     "type-check": "vue-tsc --build",
-    "emulators": "firebase emulators:start --project demo-whiteboard-app --only auth,firestore",
+    "emulators": "node scripts/with-emulators.ts --keep-running --project demo-whiteboard-app --only auth,firestore -- node scripts/seed-emulators.ts",
     "emulators:stop": "node scripts/stop-emulators.ts",
     "test:unit": "vitest",
     "test:e2e": "node scripts/with-emulators.ts --project demo-whiteboard-app --only auth,firestore -- playwright test",
