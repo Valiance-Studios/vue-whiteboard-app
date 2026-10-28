@@ -11,6 +11,7 @@
 - Vite (Build tooling) - single app, no monorepo/workspace (no backend services are planned)
 - Vitest (Unit testing) + Vue Test Utils
 - Playwright (End-to-end testing)
+- Eslint 10 (Linting)
 
 TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not expose the JS compiler API that `vue-tsc` requires.
 
