@@ -19,3 +19,8 @@ export interface Board {
 export interface NewBoardInput {
   title: string;
 }
+
+/** User-supplied fields for updating an existing board. */
+export interface BoardUpdateInput {
+  content: string;
+}

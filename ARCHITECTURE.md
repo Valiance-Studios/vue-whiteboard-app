@@ -29,8 +29,11 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
 2. **Single Board View (`/boards/:id`)**
    - Dynamic route loading a specific whiteboard. The board is fetched by the `id` route param, and the heading shows the board's title (a skeleton is shown while loading, never the id).
    - Only the board's owner may open it. A board that is missing or owned by someone else is treated identically (Firestore denies both): the view shows a "board not found" message with a link back to `/boards`.
-   - Custom `v-sheet` styled to resemble a physical dry-erase board with an expo-marker font.
-   - Textarea for typing with debounced auto-saving to Firestore.
+   - Custom `v-sheet` styled to resemble a physical dry-erase board (aluminium frame, glossy sheen) with a marker font. The font stack uses faces already installed on macOS and Windows, so the board needs no web font.
+   - Textarea for typing, auto-saved 800 ms after the last keystroke. Saves run one at a time and re-check the text afterwards, so text typed during a save is written too and writes can never land out of order.
+   - Pending writing is flushed by the in-component route guards (and on unmount), so navigating away never loses an edit. Closing the tab mid-pause can still lose the last keystrokes; there is no `beforeunload` prompt.
+   - A status next to the title reads "Saving…", "All changes saved", or an error with a Retry button. It stays empty on a board the user only reads.
+   - Note that a Firestore write made while offline stays pending rather than failing, so the status reads "Saving…" until the connection returns; the error state is for rejected writes, such as a board that was deleted.
    - Do not worry about supporting free writing/drawing with the mouse or a touch screen for now.
 
 `/` redirects to `/boards`. Routes requiring a session are flagged with `meta.requiresAuth`.
@@ -61,10 +64,10 @@ Boards are private to their owner. The owner is the creator, identified by `crea
 
 Components never call Firestore directly. The layers are:
 
-- **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. Currently `list()`, `get(id)` (returns `null` for a missing board or another user's board), and `create(input)`; `update` will be added with board editing.
+- **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. `list()`, `get(id)` (returns `null` for a missing board or another user's board), `create(input)`, and `update(id, changes)`. Unlike `get`, `update` rejects for a missing or someone else's board, so the view can report a failed save.
 - **`FirestoreBoardRepository`**: the only implementation for now. Maps Firestore documents to the domain `Board` and applies the owner filter required by the rules.
-- **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session (demo mode will branch here).
-- **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call, discards a load that finishes after the session changed, and is reset on sign-out.
+- **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session (demo mode will branch here). Callers build a repository per use instead of keeping one, so it always matches the current session and no cache has to be invalidated on sign-in or sign-out. Implementations must therefore be **cheap to construct and hold no state between calls** - `FirestoreBoardRepository` is just a uid alongside the shared `db` singleton. A demo-mode implementation must read and write its store (e.g. `localStorage`) on each call rather than caching boards in a field.
+- **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call, discards a load that finishes after the session changed, and is reset on sign-out. `saveBoardContent(id, content)` lets errors propagate, because the board view owns the save status rather than the store.
 
 ## Future: Demo Mode (not yet implemented)
 
@@ -115,11 +118,13 @@ Last updated 2026-10-28.
 - Board data layer (`BoardRepository` with `list`, `get`, `create`) and the boards store.
 - Board Collection View: in-memory substring search, board grid, create dialog, empty and error states.
 - Single Board View: loads the board by id and shows its title, with loading, not-found, and error states.
+- Single Board View editing: dry-erase styled `v-sheet`, debounced auto-save through `BoardRepository.update`, save status, and a flush when leaving the board.
+- `npm run emulators:stop` to clear emulator ports left in use.
 
 **Next**
-- Single Board View editing: dry-erase styled `v-sheet` with an expo-marker font, and a textarea with debounced auto-save.
-  - Add `update` to `BoardRepository` / `FirestoreBoardRepository`. The rules already allow owner updates, as long as `createdAt` is unchanged and `updatedAt` is re-stamped with the user's uid and server time.
-  - Use the existing `src/utils/debounce.ts` for auto-save. Pending changes probably need to be flushed when leaving the page.
+- Nothing is in progress. Likely candidates, in no particular order:
+  - Renaming and deleting a board (the rules already allow both for the owner; `update` takes a `BoardUpdateInput`, so a `title` field can be added to it).
+  - Demo mode (see "Future: Demo Mode").
 
 **Later**
 - Demo mode (see "Future: Demo Mode").

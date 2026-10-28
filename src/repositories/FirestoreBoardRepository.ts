@@ -1,9 +1,9 @@
-import type {AuditStamp, Board, NewBoardInput} from '@/types/board';
+import type {AuditStamp, Board, BoardUpdateInput, NewBoardInput} from '@/types/board';
 import type {BoardRepository} from './BoardRepository';
-import type {DocumentSnapshot, Firestore, Timestamp} from 'firebase/firestore';
+import type {DocumentSnapshot, FieldValue, Firestore, Timestamp} from 'firebase/firestore';
 
 import {FirebaseError} from 'firebase/app';
-import {addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, where} from 'firebase/firestore';
+import {addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where} from 'firebase/firestore';
 import {toSearchable} from '@/utils/search';
 
 const BOARDS_COLLECTION = 'boards';
@@ -11,6 +11,12 @@ const BOARDS_COLLECTION = 'boards';
 interface AuditStampDocument {
   uid: string;
   time: Timestamp;
+}
+
+/** An audit stamp on its way to Firestore, before the server fills in the time. */
+interface PendingAuditStamp {
+  uid: string;
+  time: FieldValue;
 }
 
 interface BoardDocument {
@@ -49,6 +55,11 @@ export class FirestoreBoardRepository implements BoardRepository {
     this.uid = uid;
   }
 
+  /** Stamps a write with the signed-in user and the server's time, as the rules require. */
+  private selfStamp(): PendingAuditStamp {
+    return {uid: this.uid, time: serverTimestamp()};
+  }
+
   async list(): Promise<Board[]> {
     // The owner filter is required by the security rules; unfiltered queries are rejected.
     const snapshot = await getDocs(query(collection(this.db, BOARDS_COLLECTION), where('createdAt.uid', '==', this.uid)));
@@ -73,7 +84,7 @@ export class FirestoreBoardRepository implements BoardRepository {
 
   async create(input: NewBoardInput): Promise<string> {
     const title = input.title.trim();
-    const stamp = {uid: this.uid, time: serverTimestamp()};
+    const stamp = this.selfStamp();
 
     const ref = await addDoc(collection(this.db, BOARDS_COLLECTION), {
       title,
@@ -84,5 +95,14 @@ export class FirestoreBoardRepository implements BoardRepository {
     });
 
     return ref.id;
+  }
+
+  async update(id: string, changes: BoardUpdateInput): Promise<void> {
+    // The fields are listed explicitly: the rules reject an update that writes any other field,
+    // and `createdAt` must stay untouched so the owner cannot change.
+    await updateDoc(doc(this.db, BOARDS_COLLECTION, id), {
+      content: changes.content,
+      updatedAt: this.selfStamp(),
+    });
   }
 }
