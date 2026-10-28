@@ -1,21 +1,40 @@
 <template>
   <v-app>
     <v-app-bar
-      color="primary"
-      density="comfortable"
+      color="surface"
+      flat
+      border="b"
     >
       <v-app-bar-title>
         <router-link
           :to="{name: boardCollectionRoute}"
           class="app-title"
-        >Whiteboard</router-link>
+        >
+          <v-icon
+            icon="mdi-marker"
+            color="primary"
+          />
+          Whiteboard
+        </router-link>
       </v-app-bar-title>
 
       <template
         v-if="authStore.user"
         #append
       >
-        <span class="text-body-2 me-3 d-none d-sm-inline">{{ authStore.user.displayName ?? authStore.user.email }}</span>
+        <v-avatar
+          :image="authStore.user.photoURL ?? undefined"
+          color="primary"
+          variant="tonal"
+          size="32"
+          class="me-3"
+        >
+          <span
+            v-if="!authStore.user.photoURL"
+            class="text-subtitle-2 font-weight-bold"
+          >{{ userInitial }}</span>
+        </v-avatar>
+        <span class="text-body-2 me-3 d-none d-sm-inline">{{ userName }}</span>
         <v-btn
           variant="text"
           prepend-icon="mdi-logout"
@@ -50,6 +69,16 @@ export default defineComponent({
 
   computed: {
     ...mapStores(useAuthStore, useBoardsStore),
+
+    userName(): string {
+      const user = this.authStore.user;
+
+      return user?.displayName ?? user?.email ?? '';
+    },
+
+    userInitial(): string {
+      return this.userName.charAt(0).toUpperCase();
+    },
   },
 
   methods: {
@@ -65,6 +94,10 @@ export default defineComponent({
 
 <style lang="scss" scoped>
 .app-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
   color: inherit;
   text-decoration: none;
 }
