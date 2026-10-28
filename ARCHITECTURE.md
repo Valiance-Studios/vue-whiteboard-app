@@ -23,6 +23,7 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - Only allowlisted accounts get a session (see "Access Rules"). Anyone else is signed straight back out, on sign-in and on page load alike, and the page says which account has no access.
 1. **Board Collection View (`/boards`)**
    - Displays a searchable grid of the boards the signed-in user has created (other users' boards are never listed).
+   - Each card previews the board as a small framed whiteboard in the marker font, with the title and last update below. The header shows a board count ("6 boards", or "2 of 6 boards" while searching).
    - Includes a search bar filtering by normalized lowercase title (`titleSearchable`). All of the user's boards are loaded once and filtered **in memory**, so a search matches anywhere in the title (case-insensitive), updates instantly, and costs no extra Firestore reads. Results are sorted by title (case-insensitive, numeric-aware, so "Sprint 9" comes before "Sprint 10"). The search term is kept while navigating to a board and back.
    - Revisit if users have very many or very large boards: listing downloads every board's full content. Possible next steps would be moving `content` to a separate document so the list stays small, then pagination plus a search service.
    - Dialog modal to create new boards (title required, max 100 characters). After creation the user is taken to the new board.
@@ -37,6 +38,8 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - A status next to the title reads "Saving…", "All changes saved", or an error with a Retry button. It stays empty on a board the user only reads.
    - Note that a Firestore write made while offline stays pending rather than failing, so the status reads "Saving…" until the connection returns; the error state is for rejected writes, such as a board that was deleted.
    - Do not worry about supporting free writing/drawing with the mouse or a touch screen for now.
+
+All signed-in pages share a white app bar with the marker logo, the user's Google photo (or initial) and name, and Sign out.
 
 `/` redirects to `/boards`. Routes requiring a session are flagged with `meta.requiresAuth`.
 
@@ -127,6 +130,11 @@ Firebase Hosting, deployed manually, to the dev project `vs-valiance-studios-dev
   - `tests/integration/`: repository implementations, which also verifies their queries are allowed by the rules.
 - **E2E tests** (Playwright): under `tests/e2e/`, run against the dev server backed by the emulators. `tests/e2e/support/auth.ts` signs in through the Auth emulator's Google popup with a unique user per test, so tests are isolated without clearing data. `signIn` first allowlists the user through the Firestore emulator's REST API with the `Bearer owner` admin token, which bypasses the rules; `submitSignIn` goes through the popup without doing so, for testing denied access.
 
+## Styling
+
+- The Vuetify theme `whiteboard` (`src/plugins/vuetify.ts`) sets marker blue `#1f3b73` as `primary` on a light cool-grey background.
+- The dry-erase look (marker font stack, marker ink, aluminium frame and glossy surface) lives in `src/styles/_board.scss`. Components pull it in with `@use '@/styles/board';` (the `@/` alias works in Sass too), so the board view and the collection's previews cannot drift apart.
+
 ## Linting
 
 ESLint (flat config, `eslint.config.js`) with `typescript-eslint`, `eslint-plugin-vue` (`flat/recommended`), and `@stylistic` (semicolons, single quotes, 1tbs braces, always-parenthesized arrow params, no spaces inside object braces). Run `npm run lint` / `npm run lint:fix`.
@@ -153,10 +161,12 @@ Last updated 2026-10-28.
 - `npm run emulators:stop` to clear emulator ports left in use.
 - Firebase Hosting deployment to the dev project, with the app pointed at the named `vue-whiteboard-app` database.
 - Firestore safeguards: an email allowlist for all board access (with a "no access" message on the login page), a board content size cap, and a minimum gap between writes to one board.
+- Visual refresh of the app bar and Board Collection View: a custom Vuetify theme, whiteboard-style board cards, and a board count.
 
 **Next**
 - First manual deploy (`npm run deploy`) once `.env.production.local` exists and the allowlist has an entry for you, then a sign-in smoke test on the hosted URL.
 - Before wider use: App Check (reCAPTCHA Enterprise) enforced for Firestore, so only the real web app can call it, and a budget alert on the project's billing account.
+- Marker tray on the Single Board View: six marker colors on an aluminium ledge under the board, coloring new writing or the selected text. It replaces the textarea with a Tiptap editor and stores colors as runs in a new optional `inks` field next to the plain-text `content`.
 - Other candidates, in no particular order:
   - Renaming and deleting a board (the rules already allow both for the owner; `update` takes a `BoardUpdateInput`, so a `title` field can be added to it).
   - Demo mode (see "Future: Demo Mode").

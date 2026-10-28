@@ -2,31 +2,34 @@
   <v-card
     :to="boardRoute"
     class="board-card"
-    variant="outlined"
-    height="100%"
+    rounded="xl"
+    elevation="0"
+    border
   >
-    <v-card-title class="text-truncate">
-      {{ board.title }}
-    </v-card-title>
-
-    <v-card-subtitle :title="updatedAtFull">
-      Updated {{ updatedAt }}
-    </v-card-subtitle>
-
-    <v-card-text>
+    <div class="board-card__board">
       <p
         v-if="board.content"
-        class="board-card__preview"
+        class="board-card__preview ma-0"
       >
         {{ board.content }}
       </p>
       <p
         v-else
-        class="board-card__preview board-card__preview--empty"
+        class="board-card__empty"
       >
         Empty board
       </p>
-    </v-card-text>
+    </div>
+
+    <div class="board-card__details">
+      <span class="board-card__title">{{ board.title }}</span>
+      <span
+        class="text-body-2 text-medium-emphasis"
+        :title="updatedAtFull"
+      >
+        Updated {{ updatedAt }}
+      </span>
+    </div>
   </v-card>
 </template>
 
@@ -66,17 +69,73 @@ export default defineComponent({
 </script>
 
 <style lang="scss" scoped>
-.board-card__preview {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  line-clamp: 4;
-  overflow: hidden;
-  white-space: pre-line;
+@use '@/styles/board';
 
-  &--empty {
+.board-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 12px 16px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+
+  &:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 24px rgb(28 35 48 / 12%);
+  }
+
+  // The lift replaces Vuetify's grey hover overlay, which would dull the white card.
+  :deep(.v-card__overlay) {
+    display: none;
+  }
+
+  &:focus-visible {
+    outline: 3px solid rgb(var(--v-theme-primary));
+    outline-offset: 3px;
+  }
+
+  &__board {
+    @include board.surface(6px);
+
+    height: 156px;
+    padding: 12px 16px;
+    border-radius: 10px;
+  }
+
+  &__preview {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    overflow: hidden;
+    white-space: pre-line;
+    font-family: board.$marker-font;
+    font-size: 1.2rem;
+    line-height: 1.75rem;
+    color: board.$marker-ink;
+  }
+
+  &__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
     font-style: italic;
     opacity: 0.6;
+  }
+
+  &__details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 4px;
+  }
+
+  &__title {
+    overflow: hidden;
+    font-size: 1.05rem;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 }
 </style>
