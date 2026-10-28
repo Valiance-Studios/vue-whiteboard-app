@@ -14,3 +14,8 @@ export interface Board {
   createdAt: AuditStamp;
   updatedAt: AuditStamp;
 }
+
+/** User-supplied fields for creating a board. */
+export interface NewBoardInput {
+  title: string;
+}

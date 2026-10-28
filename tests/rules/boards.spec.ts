@@ -122,6 +122,18 @@ describe('boards: create', () => {
   it('denies unauthenticated creates', async () => {
     await assertFails(addDoc(collection(db(null), 'boards'), newBoard(OWNER)));
   });
+
+  it('denies a blank title', async () => {
+    await assertFails(addDoc(collection(db(OWNER), 'boards'), newBoard(OWNER, '   ')));
+  });
+
+  it('allows a title at the maximum length', async () => {
+    await assertSucceeds(addDoc(collection(db(OWNER), 'boards'), newBoard(OWNER, 'a'.repeat(100))));
+  });
+
+  it('denies a title over the maximum length', async () => {
+    await assertFails(addDoc(collection(db(OWNER), 'boards'), newBoard(OWNER, 'a'.repeat(101))));
+  });
 });
 
 describe('boards: update', () => {

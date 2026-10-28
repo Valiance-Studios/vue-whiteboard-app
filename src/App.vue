@@ -15,7 +15,7 @@
         v-if="authStore.user"
         #append
       >
-        <span class="text-body-2 me-3">{{ authStore.user.displayName ?? authStore.user.email }}</span>
+        <span class="text-body-2 me-3 d-none d-sm-inline">{{ authStore.user.displayName ?? authStore.user.email }}</span>
         <v-btn
           variant="text"
           prepend-icon="mdi-logout"
@@ -36,6 +36,7 @@
 import {defineComponent} from 'vue';
 import {mapStores} from 'pinia';
 import {useAuthStore} from '@/stores/auth';
+import {useBoardsStore} from '@/stores/boards';
 import {RouteName} from '@/router';
 
 export default defineComponent({
@@ -48,12 +49,14 @@ export default defineComponent({
   },
 
   computed: {
-    ...mapStores(useAuthStore),
+    ...mapStores(useAuthStore, useBoardsStore),
   },
 
   methods: {
     async onSignOut(): Promise<void> {
       await this.authStore.signOut();
+      // Clear the previous user's data so it never flashes for the next session.
+      this.boardsStore.$reset();
       await this.$router.replace({name: RouteName.Login});
     },
   },

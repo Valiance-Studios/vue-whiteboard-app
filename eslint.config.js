@@ -67,9 +67,9 @@ export default defineConfig([
     },
   },
 
-  // Tooling config files (Node)
+  // Tooling config files and scripts (Node)
   {
-    files: ['*.config.{js,ts}'],
+    files: ['*.config.{js,ts}', 'scripts/**/*.ts'],
     languageOptions: {
       globals: {
         ...globals.node,
@@ -77,9 +77,9 @@ export default defineConfig([
     },
   },
 
-  // Unit and rules tests (Vitest)
+  // Unit, rules, and integration tests (Vitest)
   {
-    files: ['tests/unit/**/*.ts', 'tests/rules/**/*.ts'],
+    files: ['tests/unit/**/*.ts', 'tests/rules/**/*.ts', 'tests/integration/**/*.ts'],
     languageOptions: {
       globals: {
         ...globals.vitest,

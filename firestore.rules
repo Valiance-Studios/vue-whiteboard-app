@@ -18,6 +18,9 @@ service cloud.firestore {
     function hasValidFields(data) {
       return data.keys().hasOnly(['title', 'titleSearchable', 'content', 'createdAt', 'updatedAt'])
         && data.title is string
+        // Keep the max length in sync with BOARD_TITLE_MAX_LENGTH in src/constants/board.ts.
+        && data.title.trim().size() > 0
+        && data.title.size() <= 100
         && data.titleSearchable == data.title.lower()
         && data.content is string;
     }
