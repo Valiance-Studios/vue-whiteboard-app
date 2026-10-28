@@ -6,7 +6,7 @@
       </h1>
 
       <v-text-field
-        v-model="searchInput"
+        v-model="searchTerm"
         class="collection-header__search"
         label="Search by title"
         prepend-inner-icon="mdi-magnify"
@@ -42,16 +42,16 @@
       <template #append>
         <v-btn
           variant="text"
-          @click="search"
+          @click="load"
         >
           Retry
         </v-btn>
       </template>
     </v-alert>
 
-    <v-row v-if="boardsStore.boards.length > 0">
+    <v-row v-if="boardsStore.visibleBoards.length > 0">
       <v-col
-        v-for="board in boardsStore.boards"
+        v-for="board in boardsStore.visibleBoards"
         :key="board.id"
         cols="12"
         sm="6"
@@ -64,12 +64,12 @@
 
     <v-empty-state
       v-else-if="showEmptyState"
-      :icon="boardsStore.searchTerm ? 'mdi-magnify-close' : 'mdi-draw'"
-      :title="boardsStore.searchTerm ? 'No matching boards' : 'No boards yet'"
+      :icon="isSearching ? 'mdi-magnify-close' : 'mdi-draw'"
+      :title="isSearching ? 'No matching boards' : 'No boards yet'"
       :text="emptyStateText"
     >
       <template
-        v-if="!boardsStore.searchTerm"
+        v-if="!isSearching"
         #actions
       >
         <v-btn
@@ -96,9 +96,7 @@ import BoardCard from '@/components/BoardCard.vue';
 import CreateBoardDialog from '@/components/CreateBoardDialog.vue';
 import {RouteName} from '@/router/routes';
 import {useBoardsStore} from '@/stores/boards';
-import {debounce} from '@/utils/debounce';
-
-const SEARCH_DEBOUNCE_MS = 300;
+import {toSearchable} from '@/utils/search';
 
 export default defineComponent({
   name: 'BoardCollectionView',
@@ -110,45 +108,45 @@ export default defineComponent({
 
   data() {
     return {
-      /** `null` when the field is cleared. */
-      searchInput: '' as string | null,
       createDialogOpen: false,
-      debouncedSearch: debounce(() => this.search(), SEARCH_DEBOUNCE_MS),
     };
   },
 
   computed: {
     ...mapStores(useBoardsStore),
 
+    searchTerm: {
+      get(): string {
+        return this.boardsStore.searchTerm;
+      },
+      /** The field's clear button sets `null`. */
+      set(term: string | null): void {
+        this.boardsStore.searchTerm = term ?? '';
+      },
+    },
+
+    isSearching(): boolean {
+      return toSearchable(this.boardsStore.searchTerm) !== '';
+    },
+
     showEmptyState(): boolean {
       return !this.boardsStore.loading && !this.boardsStore.error;
     },
 
     emptyStateText(): string {
-      return this.boardsStore.searchTerm
-        ? `No board titles start with "${this.boardsStore.searchTerm}".`
+      return this.isSearching
+        ? `No board titles contain "${this.boardsStore.searchTerm.trim()}".`
         : 'Create a board to start writing.';
     },
   },
 
-  watch: {
-    searchInput(): void {
-      this.debouncedSearch();
-    },
-  },
-
   created(): void {
-    this.search();
-  },
-
-  beforeUnmount(): void {
-    this.debouncedSearch.cancel();
+    this.load();
   },
 
   methods: {
-    search(): void {
-      this.debouncedSearch.cancel();
-      void this.boardsStore.search(this.searchInput ?? '');
+    load(): void {
+      void this.boardsStore.load();
     },
 
     openBoard(id: string): void {

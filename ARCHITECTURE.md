@@ -22,11 +22,12 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - Unauthenticated users are redirected here by a global route guard; after sign-in they return to the route they originally requested.
 1. **Board Collection View (`/boards`)**
    - Displays a searchable grid of the boards the signed-in user has created (other users' boards are never listed).
-   - Includes a search bar filtering by normalized lowercase title (`titleSearchable`). Search is a case-insensitive **prefix** match (a Firestore range query), debounced by 300 ms; results are sorted by title.
+   - Includes a search bar filtering by normalized lowercase title (`titleSearchable`). All of the user's boards are loaded once and filtered **in memory**, so a search matches anywhere in the title (case-insensitive), updates instantly, and costs no extra Firestore reads. Results are sorted by title (case-insensitive, numeric-aware, so "Sprint 9" comes before "Sprint 10"). The search term is kept while navigating to a board and back.
+   - Revisit if users have very many or very large boards: listing downloads every board's full content. Possible next steps would be moving `content` to a separate document so the list stays small, then pagination plus a search service.
    - Dialog modal to create new boards (title required, max 100 characters). After creation the user is taken to the new board.
    - Empty states distinguish "no boards yet" from "no boards match the search".
 2. **Single Board View (`/boards/:id`)**
-   - Dynamic route loading a specific whiteboard.
+   - Dynamic route loading a specific whiteboard. The board is fetched by the `id` route param, and the heading shows the board's title (a skeleton is shown while loading, never the id).
    - Only the board's owner may open it. A board that is missing or owned by someone else is treated identically (Firestore denies both): the view shows a "board not found" message with a link back to `/boards`.
    - Custom `v-sheet` styled to resemble a physical dry-erase board with an expo-marker font.
    - Textarea for typing with debounced auto-saving to Firestore.
@@ -52,7 +53,7 @@ The application/domain layer uses a storage-agnostic `Board` type (with `Date` i
 Boards are private to their owner. The owner is the creator, identified by `createdAt.uid` (no separate owner field).
 
 - Read, update, and delete are allowed only when `createdAt.uid` matches the signed-in user.
-- List queries must filter on `where('createdAt.uid', '==', uid)`; unfiltered queries are rejected. Title search adds a prefix range on `titleSearchable`, backed by a composite index (`createdAt.uid`, `titleSearchable`) in `firestore.indexes.json`.
+- List queries must filter on `where('createdAt.uid', '==', uid)`; unfiltered queries are rejected. This single-field equality query needs no composite index.
 - On create, `createdAt` and `updatedAt` must both be stamped with the signed-in user's uid and the server time. On update, `createdAt` is immutable and `updatedAt` must be re-stamped by the owner.
 - Rules are covered by tests in `tests/rules/`.
 
@@ -60,10 +61,10 @@ Boards are private to their owner. The owner is the creator, identified by `crea
 
 Components never call Firestore directly. The layers are:
 
-- **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. Currently `search(term)` and `create(input)`; `get` and `update` will be added with the Single Board View.
+- **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. Currently `list()`, `get(id)` (returns `null` for a missing board or another user's board), and `create(input)`; `update` will be added with board editing.
 - **`FirestoreBoardRepository`**: the only implementation for now. Maps Firestore documents to the domain `Board` and applies the owner filter required by the rules.
 - **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session (demo mode will branch here).
-- **`useBoardsStore`** (Pinia): holds the current search results and loading/error state, and obtains a repository for the current session per call. When searches overlap, only the latest one updates state. The store is reset on sign-out.
+- **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call, discards a load that finishes after the session changed, and is reset on sign-out.
 
 ## Future: Demo Mode (not yet implemented)
 
@@ -72,7 +73,7 @@ Users will be able to skip sign-in and use the app with changes kept in `localSt
 - **Session abstraction**: the auth store exposes a "session" (signed-in user *or* demo user, uid `demo`). The route guard checks for a session, not specifically a Firebase user.
 - **Repository swap**: a `LocalStorageBoardRepository` (or in-memory) implements the same `BoardRepository` interface and is selected when the session is a demo session.
 - **Storage-agnostic types**: because the domain `Board` uses `Date`, a non-Firestore implementation needs no Firebase dependency.
-- Search in a local implementation filters in memory instead of using a Firestore prefix query.
+- **Search needs no work**: it already runs in memory over `list()`, so a local implementation only has to return the boards.
 
 ## Local Development
 
