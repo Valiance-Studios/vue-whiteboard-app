@@ -79,7 +79,8 @@ Users will be able to skip sign-in and use the app with changes kept in `localSt
 
 - Development runs against the **Firebase Local Emulator Suite** (Auth + Firestore) using the `demo-whiteboard-app` project ID. The `demo-` prefix guarantees no real Firebase resources are touched.
 - `VITE_USE_FIREBASE_EMULATORS=true` connects the SDK to the emulators. Real project config is supplied later via `.env.local` (not committed).
-- Requires Java (for the Firestore emulator); `firebase-tools` is a dev dependency.
+- Requires Java 21+ (for the Firestore emulator); `firebase-tools` is a dev dependency.
+- New machine setup: `nvm install 26` and `nvm use 26` (nvm-windows does not read `.nvmrc`), `npm ci`, then `npx playwright install chromium`. The first emulator run downloads the emulator binaries.
 - Run `npm run emulators` in one terminal and `npm run dev` in another. Emulator UI: http://127.0.0.1:4000.
 - `npm run test:emulator` and `npm run test:e2e` start their own emulators through `scripts/with-emulators.ts` (run directly by Node's built-in TypeScript support). It replaces `firebase emulators:exec`, which on Windows left the Firestore emulator's Java process running and broke the next run with "port taken". Stop any `npm run emulators` session first, since both use the same ports.
 
@@ -94,3 +95,31 @@ Users will be able to skip sign-in and use the app with changes kept in `localSt
 ## Linting
 
 ESLint (flat config, `eslint.config.js`) with `typescript-eslint`, `eslint-plugin-vue` (`flat/recommended`), and `@stylistic` (semicolons, single quotes, 1tbs braces, always-parenthesized arrow params, no spaces inside object braces). Run `npm run lint` / `npm run lint:fix`.
+
+## Known Quirks
+
+- **Auth emulator popup**: on a freshly started Auth emulator, a sign-in popup sometimes ignores its submit button (no request is sent and the popup never closes). The E2E helper `tests/e2e/support/auth.ts` closes a stuck popup and retries. The emulator's form inputs also lack accessible names, so the helper selects them by id.
+- **Vuetify and Vite pre-bundling**: `vuetify` is excluded from `optimizeDeps` in `vite.config.ts`. Otherwise, with a cold Vite cache, auto-imported components are discovered as pages load, and Vite re-optimizes and reloads the page mid-session, which breaks in-flight actions and E2E tests.
+- **Leftover emulators on Windows**: `firebase emulators:exec` left the Firestore emulator's Java process running, hence `scripts/with-emulators.ts`. Its non-Windows path (process-group kill) has not yet been verified on macOS/Linux.
+- **"Port taken" errors**: if a run fails with "port taken", look for a leftover `java` process on port 8080 (or a running `npm run emulators` session).
+
+## Project Status
+
+Last updated 2026-10-28.
+
+**Done**
+- Scaffolding, tooling (ESLint, Vitest, Playwright), and Firebase emulator setup.
+- Google sign-in with a route guard and post-login redirect; dismissing the popup is not treated as an error.
+- Owner-only Firestore security rules with tests.
+- Board data layer (`BoardRepository` with `list`, `get`, `create`) and the boards store.
+- Board Collection View: in-memory substring search, board grid, create dialog, empty and error states.
+- Single Board View: loads the board by id and shows its title, with loading, not-found, and error states.
+
+**Next**
+- Single Board View editing: dry-erase styled `v-sheet` with an expo-marker font, and a textarea with debounced auto-save.
+  - Add `update` to `BoardRepository` / `FirestoreBoardRepository`. The rules already allow owner updates, as long as `createdAt` is unchanged and `updatedAt` is re-stamped with the user's uid and server time.
+  - Use the existing `src/utils/debounce.ts` for auto-save. Pending changes probably need to be flushed when leaving the page.
+
+**Later**
+- Demo mode (see "Future: Demo Mode").
+- Real Firebase project config, once created (`.env.local`, from `.env.example`).
