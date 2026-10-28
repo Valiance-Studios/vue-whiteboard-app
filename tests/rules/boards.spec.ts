@@ -241,6 +241,39 @@ describe('boards: update', () => {
     }));
   });
 
+  it('allows saving marker color runs', async () => {
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'boards', BOARD_ID), {
+      content: 'hello',
+      inks: 'blue:3,red:2',
+      updatedAt: selfStamp(OWNER),
+    }));
+  });
+
+  it('allows empty marker color runs', async () => {
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'boards', BOARD_ID), {content: '', inks: '', updatedAt: selfStamp(OWNER)}));
+  });
+
+  it.each([
+    ['an unknown ink', 'pink:5'],
+    ['a zero-length run', 'blue:0'],
+    ['a missing length', 'blue'],
+    ['a leading comma', ',blue:5'],
+    ['a trailing comma', 'blue:5,'],
+    ['other characters', 'blue:5;red:1'],
+  ])('denies marker color runs with %s', async (_case, inks) => {
+    await assertFails(updateDoc(doc(db(OWNER), 'boards', BOARD_ID), {content: 'hello', inks, updatedAt: selfStamp(OWNER)}));
+  });
+
+  it('denies marker color runs that are not a string', async () => {
+    await assertFails(updateDoc(doc(db(OWNER), 'boards', BOARD_ID), {content: 'hello', inks: ['blue'], updatedAt: selfStamp(OWNER)}));
+  });
+
+  it('denies marker color runs over the maximum length', async () => {
+    const inks = Array.from({length: 2_500}, () => 'orange:9').join(',');
+
+    await assertFails(updateDoc(doc(db(OWNER), 'boards', BOARD_ID), {content: 'hello', inks, updatedAt: selfStamp(OWNER)}));
+  });
+
   it('denies a write that follows the last one too closely', async () => {
     await seedBoard(0);
 

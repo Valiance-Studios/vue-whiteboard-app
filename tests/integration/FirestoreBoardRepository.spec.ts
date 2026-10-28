@@ -5,7 +5,7 @@ import type {Firestore} from 'firebase/firestore';
 import {readFileSync} from 'node:fs';
 import {afterAll, beforeAll, beforeEach, describe, expect, it} from 'vitest';
 import {initializeTestEnvironment} from '@firebase/rules-unit-testing';
-import {doc, setDoc} from 'firebase/firestore';
+import {doc, setDoc, updateDoc} from 'firebase/firestore';
 import {FirestoreBoardRepository} from '@/repositories/FirestoreBoardRepository';
 import {BOARD_MIN_SAVE_INTERVAL_MS} from '@/constants/board';
 
@@ -120,7 +120,7 @@ describe('FirestoreBoardRepository', () => {
       const id = await repository.create({title: 'Sprint Plan'});
       const created = await existingBoard(repository, id);
 
-      await repository.update(id, {content: 'Ship the editor'});
+      await repository.update(id, {content: 'Ship the editor', inks: []});
       const updated = await existingBoard(repository, id);
 
       expect(updated).toMatchObject({
@@ -138,22 +138,42 @@ describe('FirestoreBoardRepository', () => {
       const repository = repositoryFor(OWNER);
       const id = await repository.create({title: 'Notes'});
 
-      await repository.update(id, {content: 'first'});
+      await repository.update(id, {content: 'first', inks: []});
       await waitForSaveInterval();
-      await repository.update(id, {content: 'second'});
+      await repository.update(id, {content: 'second', inks: []});
 
       await expect(repository.get(id)).resolves.toMatchObject({content: 'second'});
+    });
+
+    it('saves and reads back marker colors', async () => {
+      const repository = repositoryFor(OWNER);
+      const id = await repository.create({title: 'Colors'});
+      const inks = [{ink: 'blue' as const, length: 6}, {ink: 'red' as const, length: 5}];
+
+      await repository.update(id, {content: 'Hello world', inks});
+
+      await expect(repository.get(id)).resolves.toMatchObject({content: 'Hello world', inks});
+    });
+
+    it('reads a board saved without marker colors in the default ink', async () => {
+      const repository = repositoryFor(OWNER);
+      const id = await repository.create({title: 'Plain'});
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await updateDoc(doc(context.firestore() as unknown as Firestore, 'boards', id), {content: 'Milk'});
+      });
+
+      await expect(repository.get(id)).resolves.toMatchObject({content: 'Milk', inks: [{ink: 'blue', length: 4}]});
     });
 
     it('rejects an update to another user\'s board', async () => {
       const id = await repositoryFor(OTHER).create({title: 'Bob Board'});
 
-      await expect(repositoryFor(OWNER).update(id, {content: 'mine now'})).rejects.toThrow();
+      await expect(repositoryFor(OWNER).update(id, {content: 'mine now', inks: []})).rejects.toThrow();
       await expect(repositoryFor(OTHER).get(id)).resolves.toMatchObject({content: ''});
     });
 
     it('rejects an update to a board that does not exist', async () => {
-      await expect(repositoryFor(OWNER).update('missing', {content: 'anything'})).rejects.toThrow();
+      await expect(repositoryFor(OWNER).update('missing', {content: 'anything', inks: []})).rejects.toThrow();
     });
   });
 });

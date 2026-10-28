@@ -8,6 +8,16 @@
     />
 
     <template v-else-if="board">
+      <v-btn
+        :to="boardCollectionRoute"
+        variant="text"
+        color="primary"
+        prepend-icon="mdi-chevron-left"
+        class="board-view__back mb-2"
+      >
+        My Boards
+      </v-btn>
+
       <div class="board-view__header mb-4">
         <h1 class="text-h4">
           {{ board.title }}
@@ -36,25 +46,11 @@
         </div>
       </div>
 
-      <v-sheet
-        class="board-sheet"
-        elevation="6"
-      >
-        <v-textarea
-          :model-value="content"
-          class="board-sheet__writing"
-          aria-label="Board content"
-          placeholder="Write on the board…"
-          :maxlength="contentMaxLength"
-          variant="plain"
-          rows="16"
-          hide-details
-          no-resize
-          auto-grow
-          autofocus
-          @update:model-value="onContentInput"
-        />
-      </v-sheet>
+      <whiteboard-sheet
+        :key="board.id"
+        :writing="board"
+        @change="onWritingChange"
+      />
     </template>
 
     <v-alert
@@ -93,14 +89,16 @@
 </template>
 
 <script lang="ts">
-import type {Board} from '@/types/board';
+import type {Board, BoardWriting} from '@/types/board';
 import type {Debounced} from '@/utils/debounce';
 import type {RouteLocationRaw} from 'vue-router';
 
 import {defineComponent} from 'vue';
 import {mapStores} from 'pinia';
+import WhiteboardSheet from '@/components/WhiteboardSheet.vue';
 import {debounce} from '@/utils/debounce';
-import {BOARD_CONTENT_MAX_LENGTH, BOARD_MIN_SAVE_INTERVAL_MS} from '@/constants/board';
+import {isSameWriting} from '@/utils/inks';
+import {BOARD_MIN_SAVE_INTERVAL_MS} from '@/constants/board';
 import {RouteName} from '@/router/routes';
 import {useBoardsStore} from '@/stores/boards';
 
@@ -113,6 +111,10 @@ function wait(ms: number): Promise<void> {
   });
 }
 
+function emptyWriting(): BoardWriting {
+  return {content: '', inks: []};
+}
+
 /** What the header tells the user about the state of their writing. */
 interface SaveStatus {
   text: string;
@@ -123,6 +125,10 @@ interface SaveStatus {
 
 export default defineComponent({
   name: 'BoardView',
+
+  components: {
+    WhiteboardSheet,
+  },
 
   // Writing is saved before the route changes, so edits are never lost by navigating away.
   async beforeRouteUpdate(): Promise<void> {
@@ -146,17 +152,16 @@ export default defineComponent({
       loading: true,
       errorMessage: null as string | null,
       /** What is on the board right now, saved after a pause in typing. */
-      content: '',
-      /** The text as last written to storage; anything else means there is work to save. */
-      savedContent: '',
+      writing: emptyWriting(),
+      /** The writing as last written to storage; anything else means there is work to save. */
+      savedWriting: emptyWriting(),
       saving: false,
       saveFailed: false,
       /** Whether the user has typed, so a board they only read shows no save status. */
       edited: false,
-      saveContentLater: null as Debounced<[]> | null,
+      saveWritingLater: null as Debounced<[]> | null,
       /** When the last write was acknowledged, in epoch ms, so the next one keeps the gap the rules require. */
       lastSavedAt: 0,
-      contentMaxLength: BOARD_CONTENT_MAX_LENGTH,
       boardCollectionRoute: {name: RouteName.BoardCollection} as RouteLocationRaw,
     };
   },
@@ -165,7 +170,7 @@ export default defineComponent({
     ...mapStores(useBoardsStore),
 
     unsavedChanges(): boolean {
-      return this.content !== this.savedContent;
+      return !isSameWriting(this.writing, this.savedWriting);
     },
 
     saveStatus(): SaveStatus | null {
@@ -194,7 +199,7 @@ export default defineComponent({
   },
 
   created(): void {
-    this.saveContentLater = debounce(() => {
+    this.saveWritingLater = debounce(() => {
       void this.save();
     }, SAVE_DEBOUNCE_MS);
   },
@@ -217,8 +222,8 @@ export default defineComponent({
         // Ignore the response if the user has already navigated to another board.
         if (id === this.id) {
           this.board = board;
-          this.content = board?.content ?? '';
-          this.savedContent = this.content;
+          this.writing = board ? {content: board.content, inks: board.inks} : emptyWriting();
+          this.savedWriting = this.writing;
         }
       } catch (error) {
         console.error('Failed to load board', error);
@@ -239,20 +244,20 @@ export default defineComponent({
      * flight, but it targets another document, so it cannot clash with the board being opened.
      */
     resetEditor(): void {
-      this.saveContentLater?.cancel();
-      this.content = '';
-      this.savedContent = '';
+      this.saveWritingLater?.cancel();
+      this.writing = emptyWriting();
+      this.savedWriting = this.writing;
       this.saving = false;
       this.saveFailed = false;
       this.edited = false;
       this.lastSavedAt = 0;
     },
 
-    onContentInput(value: string): void {
-      this.content = value;
+    onWritingChange(writing: BoardWriting): void {
+      this.writing = writing;
       this.edited = true;
       this.saveFailed = false;
-      this.saveContentLater?.();
+      this.saveWritingLater?.();
     },
 
     /** Writes the board, one save at a time, until storage matches what is on screen. */
@@ -277,9 +282,9 @@ export default defineComponent({
             break;
           }
 
-          const content = this.content;
-          await this.boardsStore.saveBoardContent(id, content);
-          this.savedContent = content;
+          const writing = this.writing;
+          await this.boardsStore.saveBoardWriting(id, writing);
+          this.savedWriting = writing;
           this.lastSavedAt = Date.now();
         }
       } catch (error) {
@@ -292,7 +297,7 @@ export default defineComponent({
 
     /** Saves now instead of waiting for the typing pause, e.g. when leaving the board. */
     async flushSave(): Promise<void> {
-      this.saveContentLater?.cancel();
+      this.saveWritingLater?.cancel();
       await this.save();
     },
 
@@ -304,9 +309,11 @@ export default defineComponent({
 </script>
 
 <style lang="scss" scoped>
-@use '@/styles/board';
-
 .board-view {
+  &__back {
+    margin-left: -12px;
+  }
+
   &__header {
     display: flex;
     flex-wrap: wrap;
@@ -319,42 +326,6 @@ export default defineComponent({
     align-items: center;
     gap: 6px;
     margin-left: auto;
-  }
-}
-
-.board-sheet {
-  @include board.surface(12px);
-
-  position: relative;
-  padding: 8px 24px 24px;
-
-  // The sheen left on a board that has been wiped clean.
-  &::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(104deg, rgb(255 255 255 / 80%) 0%, rgb(255 255 255 / 0%) 45%);
-    pointer-events: none;
-  }
-
-  &__writing {
-    // Positioned so the writing sits above the sheen.
-    position: relative;
-    font-family: board.$marker-font;
-
-    :deep(textarea) {
-      font-family: inherit;
-      font-size: 1.5rem;
-      line-height: 2.5rem;
-      color: board.$marker-ink;
-      caret-color: board.$marker-ink;
-    }
-
-    :deep(textarea::placeholder) {
-      font-family: inherit;
-      color: board.$marker-ink;
-      opacity: 0.35;
-    }
   }
 }
 </style>

@@ -5,6 +5,7 @@
 - Vue 3 (Options API) + TypeScript
 - Vuetify 4 (UI component library)
 - Vue Router 5 (Multi-view navigation)
+- Tiptap 3 (the board's rich-text editor, used only for marker colors)
 - Pinia 4 (State management, using Options-style stores)
 - Firebase Authentication (Google sign-in)
 - Firebase Firestore (Cloud database)
@@ -23,7 +24,7 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - Only allowlisted accounts get a session (see "Access Rules"). Anyone else is signed straight back out, on sign-in and on page load alike, and the page says which account has no access.
 1. **Board Collection View (`/boards`)**
    - Displays a searchable grid of the boards the signed-in user has created (other users' boards are never listed).
-   - Each card previews the board as a small framed whiteboard in the marker font, with the title and last update below. The header shows a board count ("6 boards", or "2 of 6 boards" while searching).
+   - Each card previews the board as a small framed whiteboard in the marker font and the writing's own marker colors (the first 400 characters are rendered), with the title and last update below. The header shows a board count ("6 boards", or "2 of 6 boards" while searching).
    - Includes a search bar filtering by normalized lowercase title (`titleSearchable`). All of the user's boards are loaded once and filtered **in memory**, so a search matches anywhere in the title (case-insensitive), updates instantly, and costs no extra Firestore reads. Results are sorted by title (case-insensitive, numeric-aware, so "Sprint 9" comes before "Sprint 10"). The search term is kept while navigating to a board and back.
    - Revisit if users have very many or very large boards: listing downloads every board's full content. Possible next steps would be moving `content` to a separate document so the list stays small, then pagination plus a search service.
    - Dialog modal to create new boards (title required, max 100 characters). After creation the user is taken to the new board.
@@ -31,8 +32,12 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
 2. **Single Board View (`/boards/:id`)**
    - Dynamic route loading a specific whiteboard. The board is fetched by the `id` route param, and the heading shows the board's title (a skeleton is shown while loading, never the id).
    - Only the board's owner may open it. A board that is missing or owned by someone else is treated identically (Firestore denies both): the view shows a "board not found" message with a link back to `/boards`.
-   - Custom `v-sheet` styled to resemble a physical dry-erase board (aluminium frame, glossy sheen) with a marker font. The font stack uses faces already installed on macOS and Windows, so the board needs no web font.
-   - Textarea for typing (at most 100,000 characters), auto-saved 800 ms after the last keystroke. Saves run one at a time and re-check the text afterwards, so text typed during a save is written too and writes can never land out of order.
+   - A "My Boards" link above the title returns to the collection.
+   - `WhiteboardSheet` is styled to resemble a physical dry-erase board (aluminium frame, glossy sheen) with a marker font. The font stack uses faces already installed on macOS and Windows, so the board needs no web font.
+   - **Marker tray** (`MarkerTray`): an aluminium ledge under the board holding six markers (black, blue, red, green, purple, orange; `src/constants/markers.ts`). The marker in hand is lifted and named ("Marker · Red"). Picking one recolors the selected text, if any, and colors everything written from then on, so a board can mix colors. Each visit starts with blue.
+   - **Editor**: a Tiptap editor limited to plain lines of colored text (`src/editor/`: document, paragraph, text, the `Ink` mark, undo/redo, placeholder, `ContentLimit`). There is no bold, headings or lists. Tiptap's document format stays inside `WhiteboardSheet` and `src/editor/`: the sheet takes and emits a `BoardWriting` (`content` plus ink runs), so the rest of the app never sees it.
+   - The `Ink` mark's plugin keeps the current ink in ProseMirror's stored marks after every change, so typing anywhere, even inside text of another color, writes in the marker in hand. Pasted and dropped text is recolored to it. Text a change brings in with no ink at all (ProseMirror reads some typing back from the DOM, e.g. typing over a select-all, which skips stored marks) gets it as well, so no text is ever uncolored. Undo restores the earlier colors.
+   - At most 100,000 characters, counting each line break (`ContentLimit`; Tiptap's CharacterCount does not count line breaks). Writing is auto-saved 800 ms after the last keystroke. Saves run one at a time and re-check the text afterwards, so text typed during a save is written too and writes can never land out of order.
    - Writes to a board are kept at least 500 ms apart (`BOARD_MIN_SAVE_INTERVAL_MS`), counted from when the previous write was acknowledged, because the rules reject writes that come closer together. Usually only a save of text typed during the previous save waits.
    - Pending writing is flushed by the in-component route guards (and on unmount), so navigating away never loses an edit. Closing the tab mid-pause can still lose the last keystrokes; there is no `beforeunload` prompt.
    - A status next to the title reads "Saving…", "All changes saved", or an error with a Retry button. It stays empty on a board the user only reads.
@@ -50,7 +55,8 @@ Boards live in the **named** Firestore database `vue-whiteboard-app`, not the pr
 - `id`: string (auto-generated)
 - `title`: string (trimmed, 1-100 characters)
 - `titleSearchable`: string (lowercase `title`)
-- `content`: string
+- `content`: string (plain text; lines separated by `\n`)
+- `inks`: string, optional: the marker color of every character in `content`, as runs, e.g. `blue:24,red:7` (`encodeInks`/`decodeInks` in `src/utils/inks.ts`). Boards without it, or with runs that do not fit `content`, read as the default ink (blue) for the uncovered text rather than failing. A line break takes the ink of the text before it.
 - `createdAt`: `AuditStamp`
 - `updatedAt`: `AuditStamp`
 
@@ -59,6 +65,8 @@ Where `AuditStamp` is `{ uid: string; time: Timestamp }` - who made the change a
 ### `allowedUsers` collection
 
 The accounts allowed to use Firestore. Each document's id is a **lowercase** email address; the document has no fields. It is managed by hand in the Firebase console (no client can write to it), and `hasFirestoreAccess` in `src/firebase/access.ts` reads the signed-in user's own entry.
+
+In the domain types, `BoardWriting` is `{ content: string; inks: InkRun[] }` with `InkRun` `{ ink: MarkerInk; length: number }`; runs are kept normalized (covering `content` exactly, no empty runs, neighbours of different inks). `Board` extends it, and `BoardUpdateInput` is it.
 
 The application/domain layer uses a storage-agnostic `Board` type (with `Date` instead of Firestore `Timestamp`). Conversion to and from Firestore documents happens only in the Firestore data-access layer, so no Firebase types leak into components or stores.
 
@@ -69,6 +77,7 @@ Signing in with Google is open to anyone, so the rules, not the client, are what
 - Every board operation requires an **allowlisted, verified email**: `request.auth.token.email_verified` is true and `allowedUsers/<lowercase email>` exists. Removing an entry locks the user out immediately, whereas disabling their Auth account leaves their token valid for up to an hour.
 - Users may `get` only their own `allowedUsers` entry, so the client can tell whether it has access (a missing entry reads as "no access", not an error). Listing and writing the allowlist are denied.
 - `content` is capped at 100,000 characters (`BOARD_CONTENT_MAX_LENGTH`), so no write can approach Firestore's 1 MiB document limit.
+- `inks`, when present, must be well-formed runs of the six known inks and at most 20,000 characters long (`BOARD_INKS_MAX_LENGTH`, about 2,000 color changes). Rules cannot check that the runs add up to the length of `content`; the client tolerates a mismatch.
 - An update must come more than 500 ms after the board's last write (`updatedAt.time`). The first edit after a board is created is exempt (detected by `updatedAt == createdAt`), so writing straight away on a new board, or leaving it right after, is never rejected.
 - Not limited: how many boards a user creates, and reads, which rules cannot rate-limit. The allowlist is the protection for both. A per-user board cap would need a counter document checked with `getAfter()` in a batched write, and is only worth adding if an allowlisted account is abused.
 
@@ -86,7 +95,7 @@ Components never call Firestore directly. The layers are:
 - **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. `list()`, `get(id)` (returns `null` for a missing board or another user's board), `create(input)`, and `update(id, changes)`. Unlike `get`, `update` rejects for a missing or someone else's board, so the view can report a failed save.
 - **`FirestoreBoardRepository`**: the only implementation for now. Maps Firestore documents to the domain `Board` and applies the owner filter required by the rules.
 - **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session (demo mode will branch here). Callers build a repository per use instead of keeping one, so it always matches the current session and no cache has to be invalidated on sign-in or sign-out. Implementations must therefore be **cheap to construct and hold no state between calls** - `FirestoreBoardRepository` is just a uid alongside the shared `db` singleton. A demo-mode implementation must read and write its store (e.g. `localStorage`) on each call rather than caching boards in a field.
-- **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call, discards a load that finishes after the session changed, and is reset on sign-out. `saveBoardContent(id, content)` lets errors propagate, because the board view owns the save status rather than the store.
+- **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call, discards a load that finishes after the session changed, and is reset on sign-out. `saveBoardWriting(id, writing)` lets errors propagate, because the board view owns the save status rather than the store.
 
 ## Future: Demo Mode (not yet implemented)
 
@@ -124,16 +133,17 @@ Firebase Hosting, deployed manually, to the dev project `vs-valiance-studios-dev
 
 ## Testing
 
-- **Unit tests** (Vitest, jsdom): colocated under `tests/unit/`, mirroring `src/`.
+- **Unit tests** (Vitest, jsdom): colocated under `tests/unit/`, mirroring `src/`. `tests/unit/editor/` drives a real Tiptap editor in jsdom; jsdom has no `ClipboardEvent`, so the paste test dispatches the transaction ProseMirror's paste handler would.
+- `tsconfig.vitest.json` inherits the app's `lib` (ES2022 + DOM). The create-vue template's `"lib": []` relied on `jsdom` types this project does not install, which left code under `src/` without ES2022 or DOM types when type-checked for tests.
 - **Emulator tests** (Vitest + `@firebase/rules-unit-testing`, `npm run test:emulator`): run in Node against the Firestore emulator with rules enforced. These run against `(default)` rather than the named database, because `@firebase/rules-unit-testing` cannot target a named one. That is harmless: the suite uploads `firestore.rules` to the emulator itself, so it tests the same rules file that is deployed. Dev and the E2E tests do use the named database, so the `getFirestore(app, id)` path is covered.
   - `tests/rules/`: security rules.
   - `tests/integration/`: repository implementations, which also verifies their queries are allowed by the rules.
-- **E2E tests** (Playwright): under `tests/e2e/`, run against the dev server backed by the emulators. `tests/e2e/support/auth.ts` signs in through the Auth emulator's Google popup with a unique user per test, so tests are isolated without clearing data. `signIn` first allowlists the user through the Firestore emulator's REST API with the `Bearer owner` admin token, which bypasses the rules; `submitSignIn` goes through the popup without doing so, for testing denied access.
+- **E2E tests** (Playwright): under `tests/e2e/`, run against the dev server backed by the emulators. `tests/e2e/support/auth.ts` signs in through the Auth emulator's Google popup with a unique user per test, so tests are isolated without clearing data. `signIn` first allowlists the user through the Firestore emulator's REST API with the `Bearer owner` admin token, which bypasses the rules; `submitSignIn` goes through the popup without doing so, for testing denied access. The board is a `contenteditable`, not a textarea, so `tests/e2e/support/boards.ts` writes with `writeOnBoard` (select all, then type line by line) and reads lines with `boardLines` (one `<p>` each) and colors with `inkedText(page, ink)`.
 
 ## Styling
 
 - The Vuetify theme `whiteboard` (`src/plugins/vuetify.ts`) sets marker blue `#1f3b73` as `primary` on a light cool-grey background.
-- The dry-erase look (marker font stack, marker ink, aluminium frame and glossy surface) lives in `src/styles/_board.scss`. Components pull it in with `@use '@/styles/board';` (the `@/` alias works in Sass too), so the board view and the collection's previews cannot drift apart.
+- The dry-erase look (marker font stack, aluminium frame and glossy surface) lives in `src/styles/_board.scss`. Marker colors live in code (`src/constants/markers.ts`), because the editor and the previews need them there. Components pull it in with `@use '@/styles/board';` (the `@/` alias works in Sass too), so the board view and the collection's previews cannot drift apart.
 
 ## Linting
 
@@ -162,11 +172,11 @@ Last updated 2026-10-28.
 - Firebase Hosting deployment to the dev project, with the app pointed at the named `vue-whiteboard-app` database.
 - Firestore safeguards: an email allowlist for all board access (with a "no access" message on the login page), a board content size cap, and a minimum gap between writes to one board.
 - Visual refresh of the app bar and Board Collection View: a custom Vuetify theme, whiteboard-style board cards, and a board count.
+- Marker tray and multi-color writing on the Single Board View (a Tiptap editor), with colors stored as `inks` runs and shown in the collection previews.
 
 **Next**
 - First manual deploy (`npm run deploy`) once `.env.production.local` exists and the allowlist has an entry for you, then a sign-in smoke test on the hosted URL.
 - Before wider use: App Check (reCAPTCHA Enterprise) enforced for Firestore, so only the real web app can call it, and a budget alert on the project's billing account.
-- Marker tray on the Single Board View: six marker colors on an aluminium ledge under the board, coloring new writing or the selected text. It replaces the textarea with a Tiptap editor and stores colors as runs in a new optional `inks` field next to the plain-text `content`.
 - Other candidates, in no particular order:
   - Renaming and deleting a board (the rules already allow both for the owner; `update` takes a `BoardUpdateInput`, so a `title` field can be added to it).
   - Demo mode (see "Future: Demo Mode").

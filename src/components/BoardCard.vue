@@ -11,7 +11,11 @@
         v-if="board.content"
         class="board-card__preview ma-0"
       >
-        {{ board.content }}
+        <span
+          v-for="(segment, index) in previewSegments"
+          :key="index"
+          :style="{color: segment.color}"
+        >{{ segment.text }}</span>
       </p>
       <p
         v-else
@@ -36,11 +40,21 @@
 <script lang="ts">
 import type {Board} from '@/types/board';
 import type {PropType} from 'vue';
+import type {InkSegment} from '@/utils/inks';
 import type {RouteLocationRaw} from 'vue-router';
 
 import {defineComponent} from 'vue';
+import {markerColor} from '@/constants/markers';
 import {RouteName} from '@/router/routes';
 import {formatDate, formatDateTime} from '@/utils/date';
+import {inkSegments} from '@/utils/inks';
+
+/** Comfortably more than the four lines the preview shows, so a long board does not render in full. */
+const PREVIEW_LENGTH = 400;
+
+interface PreviewSegment extends InkSegment {
+  color: string;
+}
 
 export default defineComponent({
   name: 'BoardCard',
@@ -55,6 +69,11 @@ export default defineComponent({
   computed: {
     boardRoute(): RouteLocationRaw {
       return {name: RouteName.Board, params: {id: this.board.id}};
+    },
+
+    previewSegments(): PreviewSegment[] {
+      return inkSegments(this.board.content.slice(0, PREVIEW_LENGTH), this.board.inks)
+        .map((segment) => ({...segment, color: markerColor(segment.ink)}));
     },
 
     updatedAt(): string {
@@ -111,7 +130,6 @@ export default defineComponent({
     font-family: board.$marker-font;
     font-size: 1.2rem;
     line-height: 1.75rem;
-    color: board.$marker-ink;
   }
 
   &__empty {

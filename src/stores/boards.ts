@@ -1,4 +1,4 @@
-import type {Board, NewBoardInput} from '@/types/board';
+import type {Board, BoardWriting, NewBoardInput} from '@/types/board';
 import type {BoardRepository} from '@/repositories';
 import type {SessionUser} from '@/types/session';
 
@@ -80,9 +80,9 @@ export const useBoardsStore = defineStore('boards', {
       return currentRepository().create(input);
     },
 
-    /** Saves a board's content. Errors propagate to the caller, which owns the save status. */
-    async saveBoardContent(id: string, content: string): Promise<void> {
-      await currentRepository().update(id, {content});
+    /** Saves what is written on a board. Errors propagate to the caller, which owns the save status. */
+    async saveBoardWriting(id: string, writing: BoardWriting): Promise<void> {
+      await currentRepository().update(id, writing);
     },
   },
 });

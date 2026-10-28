@@ -27,15 +27,25 @@ service cloud.firestore {
       return stamp.uid == request.auth.uid && stamp.time == request.time;
     }
 
+    // Marker color runs, e.g. `blue:24,red:7`. Whether they match the text's length cannot be checked here,
+    // so the client reads mismatched runs as the default ink.
+    // Keep the inks in sync with MARKER_INKS in src/constants/markers.ts, and the max length with BOARD_INKS_MAX_LENGTH.
+    function isValidInks(inks) {
+      return inks is string
+        && inks.size() <= 20000
+        && inks.matches('((black|blue|red|green|purple|orange):[1-9][0-9]{0,5}(,(black|blue|red|green|purple|orange):[1-9][0-9]{0,5})*)?');
+    }
+
     function hasValidFields(data) {
-      return data.keys().hasOnly(['title', 'titleSearchable', 'content', 'createdAt', 'updatedAt'])
+      return data.keys().hasOnly(['title', 'titleSearchable', 'content', 'inks', 'createdAt', 'updatedAt'])
         && data.title is string
         // Keep the max lengths in sync with BOARD_TITLE_MAX_LENGTH and BOARD_CONTENT_MAX_LENGTH in src/constants/board.ts.
         && data.title.trim().size() > 0
         && data.title.size() <= 100
         && data.titleSearchable == data.title.lower()
         && data.content is string
-        && data.content.size() <= 100000;
+        && data.content.size() <= 100000
+        && (!('inks' in data) || isValidInks(data.inks));
     }
 
     // Limits how often one board can be written. The first edit after creating a board is exempt,
