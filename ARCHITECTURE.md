@@ -83,6 +83,7 @@ Users will be able to skip sign-in and use the app with changes kept in `localSt
 - New machine setup: `nvm install 26` and `nvm use 26` (nvm-windows does not read `.nvmrc`), `npm ci`, then `npx playwright install chromium`. The first emulator run downloads the emulator binaries.
 - Run `npm run emulators` in one terminal and `npm run dev` in another. Emulator UI: http://127.0.0.1:4000.
 - `npm run test:emulator` and `npm run test:e2e` start their own emulators through `scripts/with-emulators.ts` (run directly by Node's built-in TypeScript support). It replaces `firebase emulators:exec`, which on Windows left the Firestore emulator's Java process running and broke the next run with "port taken". Stop any `npm run emulators` session first, since both use the same ports.
+- `npm run emulators:stop` (`scripts/stop-emulators.ts`) force-stops whatever is holding the emulator ports, for an `npm run emulators` session in another terminal or a leftover process from a crashed run. It reads the ports from `firebase.json` (plus the CLI's hub and logging ports) and only kills processes whose command line looks like a Firebase emulator, so an unrelated server on a shared port such as 8080 is reported and left alone.
 
 ## Testing
 
@@ -101,7 +102,7 @@ ESLint (flat config, `eslint.config.js`) with `typescript-eslint`, `eslint-plugi
 - **Auth emulator popup**: on a freshly started Auth emulator, a sign-in popup sometimes ignores its submit button (no request is sent and the popup never closes). The E2E helper `tests/e2e/support/auth.ts` closes a stuck popup and retries. The emulator's form inputs also lack accessible names, so the helper selects them by id.
 - **Vuetify and Vite pre-bundling**: `vuetify` is excluded from `optimizeDeps` in `vite.config.ts`. Otherwise, with a cold Vite cache, auto-imported components are discovered as pages load, and Vite re-optimizes and reloads the page mid-session, which breaks in-flight actions and E2E tests.
 - **Leftover emulators on Windows**: `firebase emulators:exec` left the Firestore emulator's Java process running, hence `scripts/with-emulators.ts`. Its non-Windows path (process-group kill) has not yet been verified on macOS/Linux.
-- **"Port taken" errors**: if a run fails with "port taken", look for a leftover `java` process on port 8080 (or a running `npm run emulators` session).
+- **"Port taken" errors**: if a run fails with "port taken", run `npm run emulators:stop`. It clears a leftover `java` process on port 8080 or a running `npm run emulators` session; if it reports a port held by a non-emulator process, stop that process yourself.
 
 ## Project Status
 

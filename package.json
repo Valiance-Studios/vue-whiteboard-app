@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "type-check": "vue-tsc --build",
     "emulators": "firebase emulators:start --project demo-whiteboard-app",
+    "emulators:stop": "node scripts/stop-emulators.ts",
     "test:unit": "vitest",
     "test:e2e": "node scripts/with-emulators.ts --project demo-whiteboard-app -- playwright test",
     "lint": "eslint .",
