@@ -22,8 +22,9 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - Unauthenticated users are redirected here by a global route guard; after sign-in they return to the route they originally requested.
 1. **Board Collection View (`/boards`)**
    - Displays a searchable grid of the boards the signed-in user has created (other users' boards are never listed).
-   - Includes a search bar filtering by normalized lowercase title (`titleSearchable`).
-   - Dialog modal to create new boards.
+   - Includes a search bar filtering by normalized lowercase title (`titleSearchable`). Search is a case-insensitive **prefix** match (a Firestore range query), debounced by 300 ms; results are sorted by title.
+   - Dialog modal to create new boards (title required, max 100 characters). After creation the user is taken to the new board.
+   - Empty states distinguish "no boards yet" from "no boards match the search".
 2. **Single Board View (`/boards/:id`)**
    - Dynamic route loading a specific whiteboard.
    - Only the board's owner may open it. A board that is missing or owned by someone else is treated identically (Firestore denies both): the view shows a "board not found" message with a link back to `/boards`.
@@ -36,8 +37,8 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
 ## Data Model (Firestore `boards` collection)
 
 - `id`: string (auto-generated)
-- `title`: string
-- `titleSearchable`: string (lowercase)
+- `title`: string (trimmed, 1-100 characters)
+- `titleSearchable`: string (lowercase `title`)
 - `content`: string
 - `createdAt`: `AuditStamp`
 - `updatedAt`: `AuditStamp`
@@ -57,7 +58,12 @@ Boards are private to their owner. The owner is the creator, identified by `crea
 
 ## Data Access
 
-Components and stores never call Firestore directly. They depend on a `BoardRepository` interface (list/search, get, create, update), injected via the board store. The Firestore implementation is the only one built for now.
+Components never call Firestore directly. The layers are:
+
+- **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. Currently `search(term)` and `create(input)`; `get` and `update` will be added with the Single Board View.
+- **`FirestoreBoardRepository`**: the only implementation for now. Maps Firestore documents to the domain `Board` and applies the owner filter required by the rules.
+- **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session (demo mode will branch here).
+- **`useBoardsStore`** (Pinia): holds the current search results and loading/error state, and obtains a repository for the current session per call. When searches overlap, only the latest one updates state. The store is reset on sign-out.
 
 ## Future: Demo Mode (not yet implemented)
 
@@ -74,12 +80,15 @@ Users will be able to skip sign-in and use the app with changes kept in `localSt
 - `VITE_USE_FIREBASE_EMULATORS=true` connects the SDK to the emulators. Real project config is supplied later via `.env.local` (not committed).
 - Requires Java (for the Firestore emulator); `firebase-tools` is a dev dependency.
 - Run `npm run emulators` in one terminal and `npm run dev` in another. Emulator UI: http://127.0.0.1:4000.
+- `npm run test:emulator` and `npm run test:e2e` start their own emulators through `scripts/with-emulators.ts` (run directly by Node's built-in TypeScript support). It replaces `firebase emulators:exec`, which on Windows left the Firestore emulator's Java process running and broke the next run with "port taken". Stop any `npm run emulators` session first, since both use the same ports.
 
 ## Testing
 
 - **Unit tests** (Vitest, jsdom): colocated under `tests/unit/`, mirroring `src/`.
-- **Security rules tests** (Vitest + `@firebase/rules-unit-testing`): under `tests/rules/`, run against the Firestore emulator via `npm run test:rules`.
-- **E2E tests** (Playwright): under `tests/e2e/`, run against the dev server backed by the emulators.
+- **Emulator tests** (Vitest + `@firebase/rules-unit-testing`, `npm run test:emulator`): run in Node against the Firestore emulator with rules enforced.
+  - `tests/rules/`: security rules.
+  - `tests/integration/`: repository implementations, which also verifies their queries are allowed by the rules.
+- **E2E tests** (Playwright): under `tests/e2e/`, run against the dev server backed by the emulators. `tests/e2e/support/auth.ts` signs in through the Auth emulator's Google popup with a unique user per test, so tests are isolated without clearing data.
 
 ## Linting
 

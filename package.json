@@ -13,10 +13,10 @@
     "type-check": "vue-tsc --build",
     "emulators": "firebase emulators:start --project demo-whiteboard-app",
     "test:unit": "vitest",
-    "test:e2e": "firebase emulators:exec --project demo-whiteboard-app \"playwright test\"",
+    "test:e2e": "node scripts/with-emulators.ts --project demo-whiteboard-app -- playwright test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-whiteboard-app \"vitest run --config vitest.rules.config.ts\""
+    "test:emulator": "node scripts/with-emulators.ts --project demo-whiteboard-app --only firestore -- vitest run --config vitest.emulator.config.ts"
   },
   "dependencies": {
     "@mdi/font": "^7.4.47",

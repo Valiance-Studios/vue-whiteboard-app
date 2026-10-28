@@ -79,10 +79,14 @@ export default defineComponent({
       this.errorMessage = null;
 
       try {
-        await this.authStore.signInWithGoogle();
-        await this.$router.replace(this.redirectPath ?? {name: RouteName.BoardCollection});
+        const signedIn = await this.authStore.signInWithGoogle();
+
+        if (signedIn) {
+          await this.$router.replace(this.redirectPath ?? {name: RouteName.BoardCollection});
+        }
       } catch (error) {
-        this.errorMessage = error instanceof Error ? error.message : 'Sign-in failed.';
+        console.error('Sign-in failed', error);
+        this.errorMessage = 'Sign-in failed. Please try again.';
       } finally {
         this.signingIn = false;
       }
