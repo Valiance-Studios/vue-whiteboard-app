@@ -5,8 +5,11 @@ import type {Board, NewBoardInput} from '@/types/board';
  * so callers never pass an owner and can only ever see that user's boards.
  */
 export interface BoardRepository {
-  /** Boards whose title starts with `term` (case-insensitive), sorted by title. An empty term returns all boards. */
-  search(term: string): Promise<Board[]>;
+  /** All of the user's boards, in no particular order. */
+  list(): Promise<Board[]>;
+
+  /** The board with this id, or `null` if it does not exist or belongs to another user. */
+  get(id: string): Promise<Board | null>;
 
   /** Creates a board and returns its id. */
   create(input: NewBoardInput): Promise<string>;

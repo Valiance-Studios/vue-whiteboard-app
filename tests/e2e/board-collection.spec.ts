@@ -3,15 +3,21 @@ import type {Page} from '@playwright/test';
 import {expect, test} from '@playwright/test';
 import {signIn} from './support/auth';
 
-async function createBoard(page: Page, title: string): Promise<void> {
+/** Creates a board from the collection page, checks it opens, returns to the collection, and returns the board's URL. */
+async function createBoard(page: Page, title: string): Promise<string> {
   await page.getByRole('button', {name: 'New board'}).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Title').fill(title);
   await dialog.getByRole('button', {name: 'Create'}).click();
 
   await expect(page).toHaveURL(/\/boards\/[^/]+$/);
+  await expect(page.getByRole('heading', {name: `${title}`})).toBeVisible();
+  const boardUrl = page.url();
+
   await page.goBack();
   await expect(page).toHaveURL(/\/boards$/);
+
+  return boardUrl;
 }
 
 function boardCards(page: Page) {
@@ -36,6 +42,14 @@ test.describe('board collection', () => {
     await expect(boardCards(page).first()).toContainText('Empty board');
   });
 
+  test('opens a board from its card', async ({page}) => {
+    await createBoard(page, 'Retro Notes');
+
+    await boardCards(page).first().click();
+
+    await expect(page.getByRole('heading', {name: 'Retro Notes'})).toBeVisible();
+  });
+
   test('requires a title', async ({page}) => {
     await page.getByRole('button', {name: 'New board'}).click();
     const dialog = page.getByRole('dialog');
@@ -45,7 +59,7 @@ test.describe('board collection', () => {
     await expect(page).toHaveURL(/\/boards$/);
   });
 
-  test('filters boards by case-insensitive title prefix', async ({page}) => {
+  test('filters boards by case-insensitive title substring', async ({page}) => {
     await createBoard(page, 'Project Alpha');
     await createBoard(page, 'project beta');
     await createBoard(page, 'Retro Notes');
@@ -58,6 +72,11 @@ test.describe('board collection', () => {
     await expect(boardCards(page).nth(0)).toContainText('Project Alpha');
     await expect(boardCards(page).nth(1)).toContainText('project beta');
 
+    await search.fill('alpha');
+
+    await expect(boardCards(page)).toHaveCount(1);
+    await expect(boardCards(page).first()).toContainText('Project Alpha');
+
     await search.fill('zzz');
 
     await expect(page.getByText('No matching boards')).toBeVisible();
@@ -67,19 +86,32 @@ test.describe('board collection', () => {
 
     await expect(boardCards(page)).toHaveCount(3);
   });
+
+  test('shows not found for a board that does not exist', async ({page}) => {
+    await page.goto('/boards/does-not-exist');
+
+    await expect(page.getByText('Board not found')).toBeVisible();
+    await page.getByRole('link', {name: 'Back to my boards'}).click();
+    await expect(page).toHaveURL(/\/boards$/);
+  });
 });
 
-test('users only see their own boards', async ({browser}) => {
+test('users only see and open their own boards', async ({browser}) => {
   const aliceContext = await browser.newContext();
   const alicePage = await aliceContext.newPage();
   await signIn(alicePage);
-  await createBoard(alicePage, 'Alice Private Board');
+  const aliceBoardUrl = await createBoard(alicePage, 'Alice Private Board');
 
   const bobContext = await browser.newContext();
   const bobPage = await bobContext.newPage();
   await signIn(bobPage);
 
   await expect(bobPage.getByText('No boards yet')).toBeVisible();
+  await expect(bobPage.getByText('Alice Private Board')).toHaveCount(0);
+
+  await bobPage.goto(aliceBoardUrl);
+
+  await expect(bobPage.getByText('Board not found')).toBeVisible();
   await expect(bobPage.getByText('Alice Private Board')).toHaveCount(0);
 
   await aliceContext.close();

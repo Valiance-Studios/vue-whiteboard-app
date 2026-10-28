@@ -1,29 +1,34 @@
 import type {Board, NewBoardInput} from '@/types/board';
 import type {BoardRepository} from '@/repositories';
+import type {SessionUser} from '@/types/session';
 
 import {defineStore} from 'pinia';
 import {createBoardRepository} from '@/repositories';
+import {toSearchable} from '@/utils/search';
 import {useAuthStore} from './auth';
 
 interface BoardsState {
+  /** All of the user's boards, as last loaded. */
   boards: Board[];
-  /** The term the current `boards` were searched with. */
   searchTerm: string;
   loading: boolean;
   error: string | null;
 }
 
-/** Incremented per search so that only the latest of overlapping searches updates state. */
-let latestSearchId = 0;
+const titleCollator = new Intl.Collator(undefined, {sensitivity: 'base', numeric: true});
 
-function currentRepository(): BoardRepository {
+function currentUser(): SessionUser {
   const authStore = useAuthStore();
 
   if (!authStore.user) {
     throw new Error('Cannot access boards without a session.');
   }
 
-  return createBoardRepository(authStore.user);
+  return authStore.user;
+}
+
+function currentRepository(): BoardRepository {
+  return createBoardRepository(currentUser());
 }
 
 export const useBoardsStore = defineStore('boards', {
@@ -34,30 +39,40 @@ export const useBoardsStore = defineStore('boards', {
     error: null,
   }),
 
+  getters: {
+    /** Boards whose title contains the search term (case-insensitive), sorted by title. */
+    visibleBoards(state): Board[] {
+      const term = toSearchable(state.searchTerm);
+      const matches = term ? state.boards.filter((board) => board.titleSearchable.includes(term)) : state.boards;
+
+      return [...matches].sort((a, b) => titleCollator.compare(a.title, b.title));
+    },
+  },
+
   actions: {
-    async search(term: string): Promise<void> {
-      const searchId = ++latestSearchId;
+    async load(): Promise<void> {
+      const user = currentUser();
       this.loading = true;
       this.error = null;
 
       try {
-        const boards = await currentRepository().search(term);
+        const boards = await createBoardRepository(user).list();
 
-        if (searchId === latestSearchId) {
+        // Discard results if the session changed (e.g. sign-out) while loading.
+        if (useAuthStore().user?.uid === user.uid) {
           this.boards = boards;
-          this.searchTerm = term;
         }
       } catch (error) {
         console.error('Failed to load boards', error);
-
-        if (searchId === latestSearchId) {
-          this.error = 'Could not load your boards. Please try again.';
-        }
+        this.error = 'Could not load your boards. Please try again.';
       } finally {
-        if (searchId === latestSearchId) {
-          this.loading = false;
-        }
+        this.loading = false;
       }
+    },
+
+    /** The board with this id, or `null` if it does not exist or is not the user's. Errors propagate to the caller. */
+    async getBoard(id: string): Promise<Board | null> {
+      return currentRepository().get(id);
     },
 
     /** Creates a board and returns its id. Errors propagate to the caller. */

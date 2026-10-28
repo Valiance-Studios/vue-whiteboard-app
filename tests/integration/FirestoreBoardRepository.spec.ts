@@ -1,4 +1,5 @@
 import type {RulesTestEnvironment} from '@firebase/rules-unit-testing';
+import type {Board} from '@/types/board';
 import type {Firestore} from 'firebase/firestore';
 
 import {readFileSync} from 'node:fs';
@@ -36,13 +37,16 @@ afterAll(async () => {
 beforeEach(async () => {
   await testEnv.clearFirestore();
 });
+function titlesOf(boards: Board[]): string[] {
+  return boards.map((board) => board.title).sort();
+}
 
 describe('FirestoreBoardRepository', () => {
   it('creates a board with a trimmed title, searchable title, and audit stamps', async () => {
     const repository = repositoryFor(OWNER);
 
     const id = await repository.create({title: '  Sprint Plan  '});
-    const [board] = await repository.search('');
+    const board = await repository.get(id);
 
     expect(board).toMatchObject({
       id,
@@ -55,34 +59,28 @@ describe('FirestoreBoardRepository', () => {
     expect(board?.createdAt.time).toBeInstanceOf(Date);
   });
 
-  it('lists all of the owner\'s boards sorted by title', async () => {
+  it('lists all of the owner\'s boards', async () => {
     const repository = repositoryFor(OWNER);
     await repository.create({title: 'Zebra'});
-    await repository.create({title: 'apple'});
-    await repository.create({title: 'Mango'});
+    await repository.create({title: 'Apple'});
 
-    const titles = (await repository.search('')).map((board) => board.title);
-
-    expect(titles).toEqual(['apple', 'Mango', 'Zebra']);
+    expect(titlesOf(await repository.list())).toEqual(['Apple', 'Zebra']);
   });
 
-  it('matches boards by case-insensitive title prefix', async () => {
-    const repository = repositoryFor(OWNER);
-    await repository.create({title: 'Project Alpha'});
-    await repository.create({title: 'project beta'});
-    await repository.create({title: 'Retro'});
-
-    const titles = (await repository.search('  PROJ ')).map((board) => board.title);
-
-    expect(titles).toEqual(['Project Alpha', 'project beta']);
-  });
-
-  it('never returns another user\'s boards', async () => {
+  it('never lists another user\'s boards', async () => {
     await repositoryFor(OTHER).create({title: 'Bob Board'});
     await repositoryFor(OWNER).create({title: 'Alice Board'});
 
-    const titles = (await repositoryFor(OWNER).search('')).map((board) => board.title);
+    expect(titlesOf(await repositoryFor(OWNER).list())).toEqual(['Alice Board']);
+  });
 
-    expect(titles).toEqual(['Alice Board']);
+  it('returns null for a board that does not exist', async () => {
+    await expect(repositoryFor(OWNER).get('missing')).resolves.toBeNull();
+  });
+
+  it('returns null for another user\'s board', async () => {
+    const id = await repositoryFor(OTHER).create({title: 'Bob Board'});
+
+    await expect(repositoryFor(OWNER).get(id)).resolves.toBeNull();
   });
 });

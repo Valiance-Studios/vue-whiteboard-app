@@ -32,11 +32,6 @@ When using Vue as the frontend framework, prefer these design choices:
 * Use TypeScript.
 * Use Pinia for state management, if applicable to the project being worked on.
 
-## Testing Preferences
-
-* Use Vitest for unit testing.
-* Use Playwright for end-to-end (E2E) testing.
-
 When writing a Vue component, prefer the ordering of the file as follows:
 
 - Component template
@@ -57,3 +52,25 @@ For example:
 <style lang="scss" scoped>
 </style
 ```
+
+## Testing Preferences
+
+* Use Vitest for unit testing.
+* Use Playwright for end-to-end (E2E) testing.
+
+## Code Style
+
+ESLint (`npm run lint`) enforces most formatting. These conventions are not enforced by the linter but should be followed:
+
+* Put `import type {...}` statements first as their own group, followed by a blank line, then value imports. Do not use inline `type` modifiers inside value imports (e.g. `import {foo, type Bar}`).
+* Leave a blank line before a `try`, between consecutive `if` blocks, and before a `return` that follows a block.
+* Do not let an imported name collide with a local method or function name; alias the import instead (e.g. `signOut as signOutFirebase` inside an action named `signOut`).
+* Use `resolve.tsconfigPaths: true` for Vite path aliases rather than a hand-written `resolve.alias`.
+
+## Workflow
+
+* Keep `ARCHITECTURE.md` up to date as part of each change, including its "Project Status" section. It is the main handoff document between sessions.
+* Work on a feature branch (e.g. `feature/<name>`) per step, never directly on `main`. The user reviews and merges pull requests, and may push follow-up tweaks to the branch.
+* Only commit, push, or open a pull request when asked.
+* Before opening a pull request, run `npm run lint`, `npm run type-check`, `npm run build`, `npx vitest run`, `npm run test:emulator`, and `npm run test:e2e`.
+* Pull request descriptions include a Summary, a Test plan checklist, and Notes for decisions or caveats.

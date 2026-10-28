@@ -7,6 +7,11 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
+  optimizeDeps: {
+    // Auto-imported Vuetify components are discovered lazily as pages load; pre-bundling them
+    // makes Vite re-optimize and reload the page mid-session whenever a new one appears.
+    exclude: ['vuetify'],
+  },
   server: {
     port: 5173,
     strictPort: true,
