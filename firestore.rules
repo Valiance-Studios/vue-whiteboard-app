@@ -1,0 +1,45 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // A board's owner is the user who created it.
+    function isOwner(data) {
+      return data.createdAt.uid == request.auth.uid;
+    }
+
+    function isStampedBySelf(stamp) {
+      return stamp.uid == request.auth.uid && stamp.time == request.time;
+    }
+
+    function hasValidFields(data) {
+      return data.keys().hasOnly(['title', 'titleSearchable', 'content', 'createdAt', 'updatedAt'])
+        && data.title is string
+        && data.titleSearchable == data.title.lower()
+        && data.content is string;
+    }
+
+    match /boards/{boardId} {
+      // Reading a missing board is denied the same as reading another user's board,
+      // so the existence of other users' boards is never revealed.
+      // List queries must filter on `createdAt.uid == <own uid>` to be allowed.
+      allow read: if isSignedIn() && isOwner(resource.data);
+
+      allow create: if isSignedIn()
+        && hasValidFields(request.resource.data)
+        && isStampedBySelf(request.resource.data.createdAt)
+        && isStampedBySelf(request.resource.data.updatedAt);
+
+      allow update: if isSignedIn()
+        && isOwner(resource.data)
+        && hasValidFields(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && isStampedBySelf(request.resource.data.updatedAt);
+
+      allow delete: if isSignedIn() && isOwner(resource.data);
+    }
+  }
+}
