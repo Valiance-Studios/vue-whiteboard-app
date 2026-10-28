@@ -1,11 +1,11 @@
 import {initializeApp} from 'firebase/app';
 import {connectAuthEmulator, getAuth} from 'firebase/auth';
 import {connectFirestoreEmulator, getFirestore} from 'firebase/firestore';
-import {emulatorHosts, firebaseOptions, useEmulators} from './config';
+import {emulatorHosts, firebaseOptions, firestoreDatabaseId, useEmulators} from './config';
 
 export const firebaseApp = initializeApp(firebaseOptions);
 export const auth = getAuth(firebaseApp);
-export const db = getFirestore(firebaseApp);
+export const db = firestoreDatabaseId ? getFirestore(firebaseApp, firestoreDatabaseId) : getFirestore(firebaseApp);
 
 if (useEmulators) {
   connectAuthEmulator(auth, emulatorHosts.auth, {disableWarnings: true});

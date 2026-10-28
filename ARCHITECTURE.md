@@ -40,6 +40,8 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
 
 ## Data Model (Firestore `boards` collection)
 
+Boards live in the **named** Firestore database `vue-whiteboard-app`, not the project's `(default)` database, because the Firebase project is shared with other Valiance Studios apps. The id comes from `VITE_FIREBASE_DATABASE_ID`; empty means `(default)`.
+
 - `id`: string (auto-generated)
 - `title`: string (trimmed, 1-100 characters)
 - `titleSearchable`: string (lowercase `title`)
@@ -88,10 +90,23 @@ Users will be able to skip sign-in and use the app with changes kept in `localSt
 - `npm run test:emulator` and `npm run test:e2e` start their own emulators through `scripts/with-emulators.ts` (run directly by Node's built-in TypeScript support). It replaces `firebase emulators:exec`, which on Windows left the Firestore emulator's Java process running and broke the next run with "port taken". Stop any `npm run emulators` session first, since both use the same ports.
 - `npm run emulators:stop` (`scripts/stop-emulators.ts`) force-stops whatever is holding the emulator ports, for an `npm run emulators` session in another terminal or a leftover process from a crashed run. It reads the ports from `firebase.json` (plus the CLI's hub and logging ports) and only kills processes whose command line looks like a Firebase emulator, so an unrelated server on a shared port such as 8080 is reported and left alone.
 
+## Deployment
+
+Firebase Hosting, deployed manually, to the dev project `vs-valiance-studios-dev` (`dev` alias in `.firebaserc`). There is no production project yet; adding one means another alias and another `.env` file, not a rework. `default` stays the `demo-whiteboard-app` emulator project so a stray `firebase` command cannot reach real infrastructure.
+
+- **First-time setup**: `firebase login`, then copy `.env.example` to `.env.production.local` and fill it in from the `vue-whiteboard-app-dev` web app config. Use `.env.production.local`, not `.env.local`: Vite loads `.env.local` in every mode, so real credentials there would point `npm run dev` and the E2E tests at real Firebase instead of the emulators.
+- **Deploy**: `npm run deploy` (hosting + Firestore rules and indexes), or `npm run deploy:hosting` / `npm run deploy:rules` for one of them. All three are pinned to `--project dev`. `firebase deploy --dry-run` validates a deploy, including the predeploy build and rules compilation, without publishing.
+- The app has its **own Hosting site**, `vs-valiance-studios-dev-whiteboard` (`hosting.site` in `firebase.json`), served at https://vs-valiance-studios-dev-whiteboard.web.app. The project's default site is left free for other Valiance Studios apps, and deploys here cannot affect them. A custom domain, if one is wanted later, attaches to this site without redeploying.
+- `hosting.predeploy` runs `scripts/check-firebase-config.ts` and then the build, so a deploy fails early if the config is missing or still points at the emulators, rather than serving an app that cannot reach Firebase. `npm run build` on its own needs no credentials, since it doubles as the type and bundle check.
+- The `firestore` entry in `firebase.json` is the **array form with an explicit `database`**, so a rules deploy can only ever reach `vue-whiteboard-app`. The single-object form would deploy to `(default)` and could overwrite another app's rules in the shared project.
+- SPA routing needs the `**` → `/index.html` rewrite, or reloading `/boards/:id` would 404. Hashed assets under `/assets` are served immutable for a year; `index.html` is not cached.
+- After the first deploy, add the hosting domain to **Authentication > Settings > Authorized domains** if a custom domain is used. `*.web.app` and `*.firebaseapp.com` are authorized automatically.
+- The Hosting emulator is deliberately not part of `npm run emulators` (`--only auth,firestore`): local work is served by Vite on port 5173, and the Hosting emulator would serve a stale `dist`.
+
 ## Testing
 
 - **Unit tests** (Vitest, jsdom): colocated under `tests/unit/`, mirroring `src/`.
-- **Emulator tests** (Vitest + `@firebase/rules-unit-testing`, `npm run test:emulator`): run in Node against the Firestore emulator with rules enforced.
+- **Emulator tests** (Vitest + `@firebase/rules-unit-testing`, `npm run test:emulator`): run in Node against the Firestore emulator with rules enforced. These run against `(default)` rather than the named database, because `@firebase/rules-unit-testing` cannot target a named one. That is harmless: the suite uploads `firestore.rules` to the emulator itself, so it tests the same rules file that is deployed. Dev and the E2E tests do use the named database, so the `getFirestore(app, id)` path is covered.
   - `tests/rules/`: security rules.
   - `tests/integration/`: repository implementations, which also verifies their queries are allowed by the rules.
 - **E2E tests** (Playwright): under `tests/e2e/`, run against the dev server backed by the emulators. `tests/e2e/support/auth.ts` signs in through the Auth emulator's Google popup with a unique user per test, so tests are isolated without clearing data.
@@ -121,8 +136,11 @@ Last updated 2026-10-28.
 - Single Board View editing: dry-erase styled `v-sheet`, debounced auto-save through `BoardRepository.update`, save status, and a flush when leaving the board.
 - `npm run emulators:stop` to clear emulator ports left in use.
 
+- Firebase Hosting deployment to the dev project, with the app pointed at the named `vue-whiteboard-app` database.
+
 **Next**
-- Nothing is in progress. Likely candidates, in no particular order:
+- First manual deploy (`npm run deploy`) once `.env.production.local` exists, then a sign-in smoke test on the hosted URL.
+- Other candidates, in no particular order:
   - Renaming and deleting a board (the rules already allow both for the owner; `update` takes a `BoardUpdateInput`, so a `title` field can be added to it).
   - Demo mode (see "Future: Demo Mode").
 

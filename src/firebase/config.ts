@@ -11,6 +11,12 @@ export const firebaseOptions: FirebaseOptions = {
   appId: env.VITE_FIREBASE_APP_ID,
 };
 
+/**
+ * The Firestore database to use. Empty means the project's `(default)` database, which is what
+ * the emulator and the rules tests use; deployments point this at the named database.
+ */
+export const firestoreDatabaseId: string = env.VITE_FIREBASE_DATABASE_ID ?? '';
+
 export const useEmulators: boolean = env.VITE_USE_FIREBASE_EMULATORS === 'true';
 
 export const emulatorHosts = {

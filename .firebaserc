@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "demo-whiteboard-app"
+    "default": "demo-whiteboard-app",
+    "dev": "vs-valiance-studios-dev"
   }
 }
