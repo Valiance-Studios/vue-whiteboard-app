@@ -1,4 +1,4 @@
-import type {Board, NewBoardInput} from '@/types/board';
+import type {Board, BoardUpdateInput, NewBoardInput} from '@/types/board';
 
 /**
  * Storage for the current session's boards. Implementations are scoped to a single user,
@@ -13,4 +13,7 @@ export interface BoardRepository {
 
   /** Creates a board and returns its id. */
   create(input: NewBoardInput): Promise<string>;
+
+  /** Applies the changes to the board and re-stamps `updatedAt`. Fails for another user's board. */
+  update(id: string, changes: BoardUpdateInput): Promise<void>;
 }

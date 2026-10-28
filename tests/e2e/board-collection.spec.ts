@@ -2,17 +2,11 @@ import type {Page} from '@playwright/test';
 
 import {expect, test} from '@playwright/test';
 import {signIn} from './support/auth';
+import {createBoard} from './support/boards';
 
-/** Creates a board from the collection page, checks it opens, returns to the collection, and returns the board's URL. */
-async function createBoard(page: Page, title: string): Promise<string> {
-  await page.getByRole('button', {name: 'New board'}).click();
-  const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Title').fill(title);
-  await dialog.getByRole('button', {name: 'Create'}).click();
-
-  await expect(page).toHaveURL(/\/boards\/[^/]+$/);
-  await expect(page.getByRole('heading', {name: `${title}`})).toBeVisible();
-  const boardUrl = page.url();
+/** Creates a board, checks it opens, returns to the collection, and returns the board's URL. */
+async function createBoardAndGoBack(page: Page, title: string): Promise<string> {
+  const boardUrl = await createBoard(page, title);
 
   await page.goBack();
   await expect(page).toHaveURL(/\/boards$/);
@@ -35,7 +29,7 @@ test.describe('board collection', () => {
   });
 
   test('creates a board, opens it, and lists it', async ({page}) => {
-    await createBoard(page, 'Sprint Planning');
+    await createBoardAndGoBack(page, 'Sprint Planning');
 
     await expect(boardCards(page)).toHaveCount(1);
     await expect(boardCards(page).first()).toContainText('Sprint Planning');
@@ -43,7 +37,7 @@ test.describe('board collection', () => {
   });
 
   test('opens a board from its card', async ({page}) => {
-    await createBoard(page, 'Retro Notes');
+    await createBoardAndGoBack(page, 'Retro Notes');
 
     await boardCards(page).first().click();
 
@@ -60,9 +54,9 @@ test.describe('board collection', () => {
   });
 
   test('filters boards by case-insensitive title substring', async ({page}) => {
-    await createBoard(page, 'Project Alpha');
-    await createBoard(page, 'project beta');
-    await createBoard(page, 'Retro Notes');
+    await createBoardAndGoBack(page, 'Project Alpha');
+    await createBoardAndGoBack(page, 'project beta');
+    await createBoardAndGoBack(page, 'Retro Notes');
     await expect(boardCards(page)).toHaveCount(3);
 
     const search = page.getByRole('textbox', {name: 'Search by title'});

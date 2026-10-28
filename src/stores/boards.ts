@@ -79,5 +79,10 @@ export const useBoardsStore = defineStore('boards', {
     async createBoard(input: NewBoardInput): Promise<string> {
       return currentRepository().create(input);
     },
+
+    /** Saves a board's content. Errors propagate to the caller, which owns the save status. */
+    async saveBoardContent(id: string, content: string): Promise<void> {
+      await currentRepository().update(id, {content});
+    },
   },
 });

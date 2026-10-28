@@ -23,13 +23,13 @@ function titlesOf(boards: Board[]): string[] {
 }
 
 describe('boards store', () => {
-  let repository: {list: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn>};
+  let repository: {[method in keyof BoardRepository]: ReturnType<typeof vi.fn>};
 
   beforeEach(() => {
     setActivePinia(createPinia());
     useAuthStore().user = {...SESSION_USER};
 
-    repository = {list: vi.fn(), get: vi.fn(), create: vi.fn()};
+    repository = {list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn()};
     vi.mocked(createBoardRepository).mockReturnValue(repository as unknown as BoardRepository);
   });
 
@@ -127,6 +127,18 @@ describe('boards store', () => {
 
     await expect(useBoardsStore().createBoard({title: 'Plans'})).resolves.toBe('new-id');
     expect(repository.create).toHaveBeenCalledWith({title: 'Plans'});
+  });
+
+  it('saves board content through the repository', async () => {
+    await useBoardsStore().saveBoardContent('1', 'Milk, eggs');
+
+    expect(repository.update).toHaveBeenCalledWith('1', {content: 'Milk, eggs'});
+  });
+
+  it('propagates a failed save to the caller', async () => {
+    repository.update.mockRejectedValue(new Error('permission-denied'));
+
+    await expect(useBoardsStore().saveBoardContent('1', 'Milk, eggs')).rejects.toThrow('permission-denied');
   });
 
   it('refuses to access boards without a session', async () => {
