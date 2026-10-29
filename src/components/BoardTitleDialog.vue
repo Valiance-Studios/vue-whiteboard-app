@@ -5,7 +5,7 @@
     max-width="480"
     @update:model-value="close"
   >
-    <v-card title="New board">
+    <v-card :title="heading">
       <v-form
         ref="form"
         @submit.prevent="onSubmit"
@@ -45,7 +45,7 @@
             variant="flat"
             :loading="saving"
           >
-            Create
+            {{ actionLabel }}
           </v-btn>
         </v-card-actions>
       </v-form>
@@ -54,28 +54,47 @@
 </template>
 
 <script lang="ts">
+import type {PropType} from 'vue';
 import type {VForm} from 'vuetify/components';
 
 import {defineComponent} from 'vue';
-import {mapStores} from 'pinia';
 import {BOARD_TITLE_MAX_LENGTH} from '@/constants/board';
-import {useBoardsStore} from '@/stores/boards';
+import {boardTitleRules} from '@/utils/validation';
 
-type ValidationRule = (value: string) => true | string;
-
+/** Asks for a board title, for creating or renaming a board. `save` does the work; a failure keeps the dialog open. */
 export default defineComponent({
-  name: 'CreateBoardDialog',
+  name: 'BoardTitleDialog',
 
   props: {
     modelValue: {
       type: Boolean,
       required: true,
     },
+    heading: {
+      type: String,
+      required: true,
+    },
+    actionLabel: {
+      type: String,
+      required: true,
+    },
+    /** The title the field starts with each time the dialog opens. */
+    initialTitle: {
+      type: String,
+      default: '',
+    },
+    save: {
+      type: Function as PropType<(title: string) => Promise<void>>,
+      required: true,
+    },
+    failureMessage: {
+      type: String,
+      required: true,
+    },
   },
 
   emits: {
     'update:modelValue': (open: boolean) => typeof open === 'boolean',
-    'created': (id: string) => typeof id === 'string',
   },
 
   data() {
@@ -84,21 +103,14 @@ export default defineComponent({
       saving: false,
       errorMessage: null as string | null,
       titleMaxLength: BOARD_TITLE_MAX_LENGTH,
-      titleRules: [
-        (value: string) => value.trim().length > 0 || 'Title is required.',
-        (value: string) => value.length <= BOARD_TITLE_MAX_LENGTH || `Title must be ${BOARD_TITLE_MAX_LENGTH} characters or fewer.`,
-      ] as ValidationRule[],
+      titleRules: boardTitleRules,
     };
-  },
-
-  computed: {
-    ...mapStores(useBoardsStore),
   },
 
   watch: {
     modelValue(open: boolean): void {
       if (open) {
-        this.title = '';
+        this.title = this.initialTitle;
         this.errorMessage = null;
       }
     },
@@ -123,12 +135,11 @@ export default defineComponent({
       this.errorMessage = null;
 
       try {
-        const id = await this.boardsStore.createBoard({title: this.title});
-        this.$emit('created', id);
+        await this.save(this.title);
         this.$emit('update:modelValue', false);
       } catch (error) {
-        console.error('Failed to create board', error);
-        this.errorMessage = 'Could not create the board. Please try again.';
+        console.error(this.failureMessage, error);
+        this.errorMessage = this.failureMessage;
       } finally {
         this.saving = false;
       }

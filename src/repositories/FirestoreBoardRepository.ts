@@ -3,7 +3,7 @@ import type {BoardRepository} from './BoardRepository';
 import type {DocumentSnapshot, FieldValue, Firestore, Timestamp} from 'firebase/firestore';
 
 import {FirebaseError} from 'firebase/app';
-import {addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where} from 'firebase/firestore';
+import {addDoc, collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where} from 'firebase/firestore';
 import {decodeInks, encodeInks} from '@/utils/inks';
 import {toSearchable} from '@/utils/search';
 
@@ -109,5 +109,20 @@ export class FirestoreBoardRepository implements BoardRepository {
       inks: encodeInks(changes.inks),
       updatedAt: this.selfStamp(),
     });
+  }
+
+  async rename(id: string, title: string): Promise<void> {
+    const trimmed = title.trim();
+
+    await updateDoc(doc(this.db, BOARDS_COLLECTION, id), {
+      title: trimmed,
+      titleSearchable: toSearchable(trimmed),
+      updatedAt: this.selfStamp(),
+    });
+  }
+
+  async delete(id: string): Promise<void> {
+    // The rules allow deleting only an existing board of the user's own, so a missing board fails too.
+    await deleteDoc(doc(this.db, BOARDS_COLLECTION, id));
   }
 }

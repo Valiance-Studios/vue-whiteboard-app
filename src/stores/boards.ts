@@ -80,6 +80,23 @@ export const useBoardsStore = defineStore('boards', {
       return currentRepository().create(input);
     },
 
+    /** Renames a board and updates it in the loaded list. Errors propagate to the caller. */
+    async renameBoard(id: string, title: string): Promise<void> {
+      await currentRepository().rename(id, title);
+      const board = this.boards.find((loaded) => loaded.id === id);
+
+      if (board) {
+        board.title = title.trim();
+        board.titleSearchable = toSearchable(board.title);
+      }
+    },
+
+    /** Deletes a board and drops it from the loaded list. Errors propagate to the caller. */
+    async deleteBoard(id: string): Promise<void> {
+      await currentRepository().delete(id);
+      this.boards = this.boards.filter((board) => board.id !== id);
+    },
+
     /** Saves what is written on a board. Errors propagate to the caller, which owns the save status. */
     async saveBoardWriting(id: string, writing: BoardWriting): Promise<void> {
       await currentRepository().update(id, writing);
