@@ -21,6 +21,7 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
 0. **Login View (`/login`)**
    - Google sign-in via Firebase Authentication.
    - Unauthenticated users are redirected here by a global route guard; after sign-in they return to the route they originally requested.
+   - A **Demo Mode** button below Google sign-in starts demo mode (see "Demo Mode").
    - Only allowlisted accounts get a session (see "Access Rules"). Anyone else is signed straight back out, on sign-in and on page load alike, and the page says which account has no access.
 1. **Board Collection View (`/boards`)**
    - Displays a searchable grid of the boards the signed-in user has created (other users' boards are never listed).
@@ -44,7 +45,7 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - Note that a Firestore write made while offline stays pending rather than failing, so the status reads "Saving…" until the connection returns; the error state is for rejected writes, such as a board that was deleted.
    - Do not worry about supporting free writing/drawing with the mouse or a touch screen for now.
 
-All signed-in pages share a white app bar with the marker logo, the user's Google photo (or initial) and name, and Sign out.
+All signed-in pages share a white app bar with the marker logo, the user's Google photo (or initial) and name, a "Demo" chip in demo mode, and Sign out.
 
 `/` redirects to `/boards`. Routes requiring a session are flagged with `meta.requiresAuth`.
 
@@ -94,17 +95,18 @@ Components never call Firestore directly. The layers are:
 
 - **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. `list()`, `get(id)` (returns `null` for a missing board or another user's board), `create(input)`, and `update(id, changes)`. Unlike `get`, `update` rejects for a missing or someone else's board, so the view can report a failed save.
 - **`FirestoreBoardRepository`**: the only implementation for now. Maps Firestore documents to the domain `Board` and applies the owner filter required by the rules.
-- **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session (demo mode will branch here). Callers build a repository per use instead of keeping one, so it always matches the current session and no cache has to be invalidated on sign-in or sign-out. Implementations must therefore be **cheap to construct and hold no state between calls** - `FirestoreBoardRepository` is just a uid alongside the shared `db` singleton. A demo-mode implementation must read and write its store (e.g. `localStorage`) on each call rather than caching boards in a field.
+- **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session: `FirestoreBoardRepository` for Google accounts, `LocalStorageBoardRepository` for demo mode. Callers build a repository per use instead of keeping one, so it always matches the current session and no cache has to be invalidated on sign-in or sign-out. Implementations must therefore be **cheap to construct and hold no state between calls** - `FirestoreBoardRepository` is just a uid alongside the shared `db` singleton. `LocalStorageBoardRepository` likewise reads and writes `localStorage` on each call rather than caching boards in a field.
 - **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call, discards a load that finishes after the session changed, and is reset on sign-out. `saveBoardWriting(id, writing)` lets errors propagate, because the board view owns the save status rather than the store.
 
-## Future: Demo Mode (not yet implemented)
+## Demo Mode
 
-Users will be able to skip sign-in and use the app with changes kept in `localStorage` (or not persisted at all). The architecture accommodates this without changes to views:
+Visitors can use the app without an account, with their boards kept in this browser's `localStorage`. Everything after the login page works the same as for a Google account; the views do not know which kind of session they are in.
 
-- **Session abstraction**: the auth store exposes a "session" (signed-in user *or* demo user, uid `demo`). The route guard checks for a session, not specifically a Firebase user.
-- **Repository swap**: a `LocalStorageBoardRepository` (or in-memory) implements the same `BoardRepository` interface and is selected when the session is a demo session.
-- **Storage-agnostic types**: because the domain `Board` uses `Date`, a non-Firestore implementation needs no Firebase dependency.
-- **Search needs no work**: it already runs in memory over `list()`, so a local implementation only has to return the boards.
+- **Starting**: the login page's **Demo Mode** button. A first-time visitor is asked for a name (`DemoModeDialog`, required, at most 50 characters), which becomes the session's `displayName`. A returning visitor in the same browser goes straight in under their saved name; the login card greets them ("Welcome back, Grace.") with a **Not you?** link. That asks someone new for a name, warning that starting deletes the previous visitor's demo boards (`enterDemoAsSomeoneNew`, which calls `clearDemoBoards`); cancelling keeps everything.
+- **Session**: `SessionUser.kind` is `'google'` or `'demo'`. A demo session has uid `demo`, no email and no photo. The auth store's `enterDemo(name?)` starts one (returning `false` when there is no name given or saved, so the login page can ask), and the `isDemo` getter drives the app bar's "Demo" chip. The route guard only checks for a session, so demo sessions pass it.
+- **Profile** (`DemoProfileStorage`, key `whiteboard.demo.profile`): `{displayName, active}`. `active` is what keeps a demo session across reloads: `init()` resumes it before Firebase reports its (empty) auth state, and Firebase reporting no user does not end a demo session. Signing out clears `active` but keeps the name and the boards, which is how the next visit skips the name prompt. An unreadable profile counts as none.
+- **Boards** (`LocalStorageBoardRepository`, key `whiteboard.demo.boards`): a JSON array of boards, dates as ISO strings and inks as runs, re-normalized on read. Methods are `async`, so a storage error such as a full quota (browsers allow roughly 5 MB per origin) rejects and shows as a failed save. There are no Firestore rules here; the views' own limits (title length, content length) still apply.
+- **Not covered**: a demo visitor cannot carry their boards into a Google account, and clearing site data deletes them. Demo writes still wait out the 500 ms save interval meant for Firestore, which is harmless.
 
 ## Local Development
 
@@ -174,14 +176,13 @@ Last updated 2026-10-28.
 - Firestore safeguards: an email allowlist for all board access (with a "no access" message on the login page), a board content size cap, and a minimum gap between writes to one board. `npm run emulators` seeds an allowlisted Dev User for local work.
 - Visual refresh of the app bar and Board Collection View: a custom Vuetify theme, whiteboard-style board cards, and a board count.
 - Marker tray and multi-color writing on the Single Board View (a Tiptap editor), with colors stored as `inks` runs and shown in the collection previews.
+- Demo Mode: a name-only session from the login page, with boards kept in `localStorage`; returning visitors go straight in.
 
 **Next**
 - First manual deploy (`npm run deploy`) once `.env.production.local` exists and the allowlist has an entry for you, then a sign-in smoke test on the hosted URL.
 - Before wider use: App Check (reCAPTCHA Enterprise) enforced for Firestore, so only the real web app can call it, and a budget alert on the project's billing account.
 - Other candidates, in no particular order:
   - Renaming and deleting a board (the rules already allow both for the owner; `update` takes a `BoardUpdateInput`, so a `title` field can be added to it).
-  - Demo mode (see "Future: Demo Mode").
 
 **Later**
-- Demo mode (see "Future: Demo Mode").
 - Real Firebase project config, once created (`.env.local`, from `.env.example`).

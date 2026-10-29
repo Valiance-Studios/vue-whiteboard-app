@@ -50,26 +50,77 @@
             >
               Sign in with Google
             </v-btn>
+
+            <div class="login-divider my-4 text-body-2 text-medium-emphasis">
+              or
+            </div>
+
+            <v-btn
+              block
+              size="large"
+              variant="outlined"
+              color="primary"
+              prepend-icon="mdi-account-outline"
+              :disabled="signingIn"
+              @click="onDemoMode"
+            >
+              Demo Mode
+            </v-btn>
+            <p
+              v-if="savedDemoName"
+              class="text-caption text-medium-emphasis mt-2 mb-0"
+            >
+              Welcome back, {{ savedDemoName }}.
+              <button
+                type="button"
+                class="login-link"
+                @click="onSomeoneNew"
+              >
+                Not you?
+              </button>
+            </p>
+            <p
+              v-else
+              class="text-caption text-medium-emphasis mt-2 mb-0"
+            >
+              No account needed. Boards are saved in this browser only.
+            </p>
           </v-card-text>
         </v-card>
       </v-col>
     </v-row>
+
+    <demo-mode-dialog
+      v-model="demoDialogOpen"
+      :previous-name="replacingSavedDemo ? savedDemoName : null"
+      @start="startDemo"
+    />
   </v-container>
 </template>
 
 <script lang="ts">
 import {defineComponent} from 'vue';
 import {mapStores} from 'pinia';
+import DemoModeDialog from '@/components/DemoModeDialog.vue';
 import {useAuthStore} from '@/stores/auth';
 import {RouteName} from '@/router';
 
 export default defineComponent({
   name: 'LoginView',
 
+  components: {
+    DemoModeDialog,
+  },
+
   data() {
     return {
       signingIn: false,
       errorMessage: null as string | null,
+      demoDialogOpen: false,
+      /** The returning demo visitor's name, if any, read once when the page opens. */
+      savedDemoName: null as string | null,
+      /** Whether the open name dialog is for someone new replacing the saved demo visitor. */
+      replacingSavedDemo: false,
     };
   },
 
@@ -83,6 +134,10 @@ export default defineComponent({
     },
   },
 
+  created(): void {
+    this.savedDemoName = this.authStore.savedDemoName();
+  },
+
   methods: {
     async onSignIn(): Promise<void> {
       this.signingIn = true;
@@ -92,7 +147,7 @@ export default defineComponent({
         const signedIn = await this.authStore.signInWithGoogle();
 
         if (signedIn) {
-          await this.$router.replace(this.redirectPath ?? {name: RouteName.BoardCollection});
+          await this.enterApp();
         }
       } catch (error) {
         console.error('Sign-in failed', error);
@@ -101,9 +156,59 @@ export default defineComponent({
         this.signingIn = false;
       }
     },
+
+    /** A returning demo visitor goes straight in; a first-time one is asked for a name. */
+    onDemoMode(): void {
+      this.replacingSavedDemo = false;
+
+      if (this.authStore.enterDemo()) {
+        void this.enterApp();
+      } else {
+        this.demoDialogOpen = true;
+      }
+    },
+
+    onSomeoneNew(): void {
+      this.replacingSavedDemo = true;
+      this.demoDialogOpen = true;
+    },
+
+    startDemo(name: string): void {
+      if (this.replacingSavedDemo) {
+        this.authStore.enterDemoAsSomeoneNew(name);
+      } else {
+        this.authStore.enterDemo(name);
+      }
+
+      void this.enterApp();
+    },
+
+    async enterApp(): Promise<void> {
+      await this.$router.replace(this.redirectPath ?? {name: RouteName.BoardCollection});
+    },
   },
 });
 </script>
 
 <style lang="scss" scoped>
+// "or" between two rules.
+.login-link {
+  color: rgb(var(--v-theme-primary));
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    border-top: 1px solid rgb(var(--v-border-color) / var(--v-border-opacity));
+  }
+}
 </style>
