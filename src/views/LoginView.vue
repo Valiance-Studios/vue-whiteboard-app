@@ -66,19 +66,32 @@
             >
               Demo Mode
             </v-btn>
-            <p
+            <div
               v-if="savedDemoName"
-              class="text-caption text-medium-emphasis mt-2 mb-0"
+              class="demo-returning mt-3"
             >
-              Welcome back, {{ savedDemoName }}.
-              <button
-                type="button"
-                class="login-link"
+              <v-avatar
+                color="primary"
+                variant="tonal"
+                size="28"
+              >
+                <span class="text-caption font-weight-bold">{{ savedDemoInitial }}</span>
+              </v-avatar>
+              <div class="demo-returning__greeting">
+                <span class="demo-returning__welcome text-caption text-medium-emphasis">Welcome back,</span>
+                <span class="demo-returning__name text-body-2 font-weight-bold">{{ savedDemoName }}</span>
+              </div>
+              <v-btn
+                variant="text"
+                size="small"
+                color="primary"
+                prepend-icon="mdi-account-switch-outline"
+                class="demo-returning__switch"
                 @click="onSomeoneNew"
               >
                 Not you?
-              </button>
-            </p>
+              </v-btn>
+            </div>
             <p
               v-else
               class="text-caption text-medium-emphasis mt-2 mb-0"
@@ -126,6 +139,10 @@ export default defineComponent({
 
   computed: {
     ...mapStores(useAuthStore),
+
+    savedDemoInitial(): string {
+      return (this.savedDemoName ?? '').charAt(0).toUpperCase();
+    },
 
     redirectPath(): string | null {
       const redirect = this.$route.query.redirect;
@@ -191,14 +208,42 @@ export default defineComponent({
 </script>
 
 <style lang="scss" scoped>
-// "or" between two rules.
-.login-link {
-  color: rgb(var(--v-theme-primary));
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
+// The returning demo visitor, with a way to start over as someone else.
+.demo-returning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 10px;
+  border-radius: 12px;
+  background: rgba(var(--v-theme-primary), 0.08);
+  text-align: left;
+
+  &__greeting {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.25;
+  }
+
+  &__welcome {
+    white-space: nowrap;
+  }
+
+  &__name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  &__switch {
+    flex-shrink: 0;
+    text-transform: none;
+    letter-spacing: normal;
+  }
 }
 
+// "or" between two rules.
 .login-divider {
   display: flex;
   align-items: center;
@@ -208,7 +253,7 @@ export default defineComponent({
   &::after {
     content: '';
     flex: 1;
-    border-top: 1px solid rgb(var(--v-border-color) / var(--v-border-opacity));
+    border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   }
 }
 </style>

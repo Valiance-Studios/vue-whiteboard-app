@@ -488,7 +488,7 @@ export default defineComponent({
 
     &:hover,
     &:focus-visible {
-      background: rgb(var(--v-theme-on-surface) / 6%);
+      background: rgba(var(--v-theme-on-surface), 0.06);
     }
 
     &:focus-visible {

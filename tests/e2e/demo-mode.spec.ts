@@ -56,7 +56,7 @@ test('demo boards are kept in the browser, and a returning visitor goes straight
 
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page).toHaveURL(/\/boards$/);
-  await expect(page.getByText('Grace')).toBeVisible();
+  await expect(page.getByRole('banner').getByText('Grace', {exact: true})).toBeVisible();
   await expect(page.locator('.board-card')).toContainText(['Demo Notes']);
 
   await page.goto(boardUrl);
@@ -78,7 +78,8 @@ test('someone new in the same browser starts fresh after a warning', async ({pag
   await createBoard(page, 'Grace Board');
   await page.getByRole('button', {name: 'Sign out'}).click();
 
-  await expect(page.getByText('Welcome back, Grace.')).toBeVisible();
+  await expect(page.getByText('Welcome back,')).toBeVisible();
+  await expect(page.getByText('Grace', {exact: true})).toBeVisible();
   await page.getByRole('button', {name: 'Not you?'}).click();
   const dialog = page.getByRole('dialog');
 
@@ -101,6 +102,7 @@ test('cancelling "Not you?" keeps the previous visitor\'s boards', async ({page}
   await page.getByRole('dialog').getByRole('button', {name: 'Cancel'}).click();
   await demoModeButton(page).click();
 
-  await expect(page.getByText('Grace', {exact: true})).toBeVisible();
+  await expect(page).toHaveURL(/\/boards$/);
+  await expect(page.getByRole('banner').getByText('Grace', {exact: true})).toBeVisible();
   await expect(page.locator('.board-card')).toContainText(['Grace Board']);
 });
