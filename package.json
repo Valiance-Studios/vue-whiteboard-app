@@ -13,6 +13,7 @@
     "type-check": "vue-tsc --build",
     "emulators": "node scripts/with-emulators.ts --keep-running --project demo-whiteboard-app --only auth,firestore -- node scripts/seed-emulators.ts",
     "emulators:stop": "node scripts/stop-emulators.ts",
+    "icons": "node scripts/generate-icons.ts",
     "test:unit": "vitest",
     "test:e2e": "node scripts/with-emulators.ts --project demo-whiteboard-app --only auth,firestore -- playwright test",
     "deploy": "firebase deploy --project dev --only hosting,firestore",
