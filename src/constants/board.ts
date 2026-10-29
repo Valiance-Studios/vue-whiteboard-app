@@ -12,3 +12,9 @@ export const BOARD_MIN_SAVE_INTERVAL_MS = 500;
  * Keep in sync with `isValidInks` in `firestore.rules`.
  */
 export const BOARD_INKS_MAX_LENGTH = 20_000;
+
+/**
+ * The width, in CSS pixels, at which a board's writing surface is laid out on every screen, then scaled to fit.
+ * Text therefore wraps at the same places everywhere, so sketches drawn over it stay on the words they mark.
+ */
+export const BOARD_SURFACE_WIDTH = 960;
