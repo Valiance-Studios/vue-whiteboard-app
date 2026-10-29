@@ -304,10 +304,7 @@ export default defineComponent({
 </script>
 
 <style lang="scss" scoped>
-// A felt-tip stack that is already on macOS and Windows, so the board needs no web font.
-$marker-font: 'Marker Felt', 'Segoe Print', 'Ink Free', 'Bradley Hand', 'Comic Sans MS', cursive;
-$marker-ink: #1f3b73;
-$board-frame: #b7c0cc;
+@use '@/styles/board';
 
 .board-view {
   &__header {
@@ -326,13 +323,10 @@ $board-frame: #b7c0cc;
 }
 
 .board-sheet {
-  // A dry-erase board: a glossy white surface in an aluminium frame.
+  @include board.surface(12px);
+
   position: relative;
   padding: 8px 24px 24px;
-  border: 12px solid $board-frame;
-  border-radius: 12px;
-  background: linear-gradient(170deg, #fff 0%, #f1f4f7 100%);
-  box-shadow: inset 0 2px 24px rgb(31 59 115 / 8%);
 
   // The sheen left on a board that has been wiped clean.
   &::before {
@@ -346,19 +340,19 @@ $board-frame: #b7c0cc;
   &__writing {
     // Positioned so the writing sits above the sheen.
     position: relative;
-    font-family: $marker-font;
+    font-family: board.$marker-font;
 
     :deep(textarea) {
       font-family: inherit;
       font-size: 1.5rem;
       line-height: 2.5rem;
-      color: $marker-ink;
-      caret-color: $marker-ink;
+      color: board.$marker-ink;
+      caret-color: board.$marker-ink;
     }
 
     :deep(textarea::placeholder) {
       font-family: inherit;
-      color: $marker-ink;
+      color: board.$marker-ink;
       opacity: 0.35;
     }
   }

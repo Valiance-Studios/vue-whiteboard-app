@@ -58,11 +58,13 @@ test.describe('board collection', () => {
     await createBoardAndGoBack(page, 'project beta');
     await createBoardAndGoBack(page, 'Retro Notes');
     await expect(boardCards(page)).toHaveCount(3);
+    await expect(page.getByText('3 boards', {exact: true})).toBeVisible();
 
     const search = page.getByRole('textbox', {name: 'Search by title'});
     await search.fill('PROJ');
 
     await expect(boardCards(page)).toHaveCount(2);
+    await expect(page.getByText('2 of 3 boards')).toBeVisible();
     await expect(boardCards(page).nth(0)).toContainText('Project Alpha');
     await expect(boardCards(page).nth(1)).toContainText('project beta');
 
