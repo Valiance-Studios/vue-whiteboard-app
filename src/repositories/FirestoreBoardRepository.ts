@@ -4,6 +4,7 @@ import type {DocumentSnapshot, FieldValue, Firestore, Timestamp} from 'firebase/
 
 import {FirebaseError} from 'firebase/app';
 import {addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where} from 'firebase/firestore';
+import {decodeInks, encodeInks} from '@/utils/inks';
 import {toSearchable} from '@/utils/search';
 
 const BOARDS_COLLECTION = 'boards';
@@ -23,6 +24,8 @@ interface BoardDocument {
   title: string;
   titleSearchable: string;
   content: string;
+  /** The marker color runs, encoded by `encodeInks`. Missing on boards that were never colored. */
+  inks?: string;
   createdAt: AuditStampDocument;
   updatedAt: AuditStampDocument;
 }
@@ -41,6 +44,7 @@ function toBoard(snapshot: DocumentSnapshot): Board {
     title: data.title,
     titleSearchable: data.titleSearchable,
     content: data.content,
+    inks: decodeInks(data.inks, data.content.length),
     createdAt: toAuditStamp(data.createdAt),
     updatedAt: toAuditStamp(data.updatedAt),
   };
@@ -102,6 +106,7 @@ export class FirestoreBoardRepository implements BoardRepository {
     // and `createdAt` must stay untouched so the owner cannot change.
     await updateDoc(doc(this.db, BOARDS_COLLECTION, id), {
       content: changes.content,
+      inks: encodeInks(changes.inks),
       updatedAt: this.selfStamp(),
     });
   }

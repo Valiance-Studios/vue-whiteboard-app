@@ -42,6 +42,10 @@ test.describe('board collection', () => {
     await boardCards(page).first().click();
 
     await expect(page.getByRole('heading', {name: 'Retro Notes'})).toBeVisible();
+
+    await page.getByRole('link', {name: 'My Boards'}).click();
+
+    await expect(page).toHaveURL(/\/boards$/);
   });
 
   test('requires a title', async ({page}) => {

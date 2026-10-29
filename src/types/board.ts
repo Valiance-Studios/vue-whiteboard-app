@@ -1,16 +1,30 @@
+import type {MarkerInk} from '@/constants/markers';
+
 /** Who made a change and when. Storage-agnostic (uses `Date`, not a Firestore `Timestamp`). */
 export interface AuditStamp {
   uid: string;
   time: Date;
 }
 
+/** A stretch of `length` characters written in one marker color. */
+export interface InkRun {
+  ink: MarkerInk;
+  length: number;
+}
+
+/** What is written on a board: the plain text, and the marker color of every character in it. */
+export interface BoardWriting {
+  content: string;
+  /** Consecutive runs covering `content` exactly, with no empty runs and no two neighbours of the same ink. */
+  inks: InkRun[];
+}
+
 /** A whiteboard as used by the application layer. */
-export interface Board {
+export interface Board extends BoardWriting {
   id: string;
   title: string;
   /** Lowercase copy of `title`, used for prefix search. */
   titleSearchable: string;
-  content: string;
   createdAt: AuditStamp;
   updatedAt: AuditStamp;
 }
@@ -21,6 +35,4 @@ export interface NewBoardInput {
 }
 
 /** User-supplied fields for updating an existing board. */
-export interface BoardUpdateInput {
-  content: string;
-}
+export type BoardUpdateInput = BoardWriting;

@@ -15,7 +15,7 @@ const SESSION_USER = {uid: 'u1', displayName: 'Test', email: null, photoURL: nul
 function makeBoard(id: string, title: string): Board {
   const stamp = {uid: 'u1', time: new Date('2026-01-01T00:00:00Z')};
 
-  return {id, title, titleSearchable: title.toLowerCase(), content: '', createdAt: stamp, updatedAt: stamp};
+  return {id, title, titleSearchable: title.toLowerCase(), content: '', inks: [], createdAt: stamp, updatedAt: stamp};
 }
 
 function titlesOf(boards: Board[]): string[] {
@@ -129,16 +129,18 @@ describe('boards store', () => {
     expect(repository.create).toHaveBeenCalledWith({title: 'Plans'});
   });
 
-  it('saves board content through the repository', async () => {
-    await useBoardsStore().saveBoardContent('1', 'Milk, eggs');
+  it('saves board writing through the repository', async () => {
+    const writing = {content: 'Milk, eggs', inks: [{ink: 'red' as const, length: 10}]};
 
-    expect(repository.update).toHaveBeenCalledWith('1', {content: 'Milk, eggs'});
+    await useBoardsStore().saveBoardWriting('1', writing);
+
+    expect(repository.update).toHaveBeenCalledWith('1', writing);
   });
 
   it('propagates a failed save to the caller', async () => {
     repository.update.mockRejectedValue(new Error('permission-denied'));
 
-    await expect(useBoardsStore().saveBoardContent('1', 'Milk, eggs')).rejects.toThrow('permission-denied');
+    await expect(useBoardsStore().saveBoardWriting('1', {content: 'Milk, eggs', inks: []})).rejects.toThrow('permission-denied');
   });
 
   it('refuses to access boards without a session', async () => {
