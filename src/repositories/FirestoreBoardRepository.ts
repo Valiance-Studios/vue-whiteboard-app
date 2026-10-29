@@ -3,11 +3,10 @@ import type {BoardRepository} from './BoardRepository';
 import type {DocumentSnapshot, FieldValue, Firestore, Timestamp} from 'firebase/firestore';
 
 import {FirebaseError} from 'firebase/app';
-import {addDoc, collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where} from 'firebase/firestore';
+import {addDoc, collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where, writeBatch} from 'firebase/firestore';
 import {decodeInks, encodeInks} from '@/utils/inks';
 import {toSearchable} from '@/utils/search';
-
-const BOARDS_COLLECTION = 'boards';
+import {BOARDS_COLLECTION, STROKES_COLLECTION} from './firestorePaths';
 
 interface AuditStampDocument {
   uid: string;
@@ -26,6 +25,8 @@ interface BoardDocument {
   content: string;
   /** The marker color runs, encoded by `encodeInks`. Missing on boards that were never colored. */
   inks?: string;
+  /** Missing on boards from before sketching. */
+  hasSketches?: boolean;
   createdAt: AuditStampDocument;
   updatedAt: AuditStampDocument;
 }
@@ -45,6 +46,7 @@ function toBoard(snapshot: DocumentSnapshot): Board {
     titleSearchable: data.titleSearchable,
     content: data.content,
     inks: decodeInks(data.inks, data.content.length),
+    hasSketches: data.hasSketches ?? false,
     createdAt: toAuditStamp(data.createdAt),
     updatedAt: toAuditStamp(data.updatedAt),
   };
@@ -107,6 +109,7 @@ export class FirestoreBoardRepository implements BoardRepository {
     await updateDoc(doc(this.db, BOARDS_COLLECTION, id), {
       content: changes.content,
       inks: encodeInks(changes.inks),
+      hasSketches: changes.hasSketches,
       updatedAt: this.selfStamp(),
     });
   }
@@ -121,7 +124,17 @@ export class FirestoreBoardRepository implements BoardRepository {
     });
   }
 
+  /** Deletes the board's strokes, then the board, so no strokes are left behind under a missing board. */
   async delete(id: string): Promise<void> {
+    const strokes = await getDocs(query(collection(this.db, BOARDS_COLLECTION, id, STROKES_COLLECTION), where('ownerUid', '==', this.uid)));
+
+    // A batch holds at most 500 writes.
+    for (let start = 0; start < strokes.docs.length; start += 500) {
+      const batch = writeBatch(this.db);
+      strokes.docs.slice(start, start + 500).forEach((stroke) => batch.delete(stroke.ref));
+      await batch.commit();
+    }
+
     // The rules allow deleting only an existing board of the user's own, so a missing board fails too.
     await deleteDoc(doc(this.db, BOARDS_COLLECTION, id));
   }

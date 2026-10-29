@@ -6,6 +6,7 @@
 - Vuetify 4 (UI component library)
 - Vue Router 5 (Multi-view navigation)
 - Tiptap 3 (the board's rich-text editor, used only for marker colors)
+- perfect-freehand (MIT), which turns sketch strokes into pressure-shaped marker lines
 - Caveat Brush (`@fontsource/caveat-brush`, SIL Open Font License), the bundled marker font
 - Pinia 4 (State management, using Options-style stores)
 - Firebase Authentication (Google sign-in)
@@ -27,6 +28,7 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
 1. **Board Collection View (`/boards`)**
    - Displays a searchable grid of the boards the signed-in user has created (other users' boards are never listed).
    - Each card previews the board as a small framed whiteboard in the marker font and the writing's own marker colors (the first 400 characters are rendered), with the title and last update below. The header has the heading with a board count beside it ("6 boards", or "2 of 6 boards" while searching) on the left, and the search field on the right.
+   - A board with sketches shows a small sketch icon beside its date (`hasSketches` on the board). The preview stays text-only: drawing the sketch would need every board's strokes, a read each.
    - Includes a search bar filtering by normalized lowercase title (`titleSearchable`). All of the user's boards are loaded once and filtered **in memory**, so a search matches anywhere in the title (case-insensitive), updates instantly, and costs no extra Firestore reads. Results are sorted by title (case-insensitive, numeric-aware, so "Sprint 9" comes before "Sprint 10"). The search term is kept while navigating to a board and back.
    - Revisit if users have very many or very large boards: listing downloads every board's full content. Possible next steps would be moving `content` to a separate document so the list stays small, then pagination plus a search service.
    - Creating a board starts from a dashed **New board** tile, the first item in the grid (a slim row on phones, so it does not push the boards off screen). It is hidden while searching, so only matching boards show. A user with no boards sees the "No boards yet" empty state instead, whose button is also labeled "New board".
@@ -43,6 +45,13 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - `WhiteboardSheet` is styled to resemble a physical dry-erase board (aluminium frame, glossy sheen), written in the bundled Caveat Brush marker font.
    - **Fixed layout**: the writing surface is laid out at a fixed width, `BOARD_SURFACE_WIDTH` (960 px), and scaled with a CSS transform to fit the frame; a `ResizeObserver` keeps the scale in step with the frame's width and the frame's height in step with the writing. With one font everywhere and sizes in px (not rem, which follows the browser's font size setting), text wraps at the same places on every screen and device, so sketches drawn over the writing stay on the words they mark. The cost is on phones: the board shows the same line length as on a desktop, so the writing is small (about 8 px at 390 px wide) and is read and edited by pinch-zooming.
    - **Marker tray** (`MarkerTray`): an aluminium ledge under the board holding six markers (black, blue, red, green, purple, orange; `src/constants/markers.ts`). The marker in hand is lifted and named ("Marker · Red"). Picking one recolors the selected text, if any, and colors everything written from then on, so a board can mix colors. Each visit starts with blue.
+   - **Sketch mode**: a Text/Sketch switch on the tray. In sketch mode the writing cannot be edited, the tray adds Pen and Eraser tools and Undo/Redo arrows, and the markers color new strokes (not the writing). The tray's controls always use the light theme, since the ledge is light aluminium in both themes.
+     - `SketchLayer` is an SVG over the writing, inside the fixed-width surface, so strokes are in the same surface pixels as the text and stay on the words they mark at any window width. Outside sketch mode it shows the strokes but lets pointers through to the writing.
+     - Drawing uses Pointer Events, so mouse, finger and pen all work; coalesced events fill in fast movement. A pen's pressure shapes its line, while mouse and finger strokes get pressure simulated from speed (`perfect-freehand`). Once a pen has been used, finger touches are ignored (palm rejection). `touch-action: pinch-zoom` keeps two-finger pinch-zoom working while one finger draws; a second finger cancels the stroke in progress.
+     - The eraser removes every whole stroke it passes within 10 surface pixels of; one eraser gesture is one undoable action.
+     - Undo/redo (`SketchHistory`) covers drawing and erasing during the current visit, separate from the text editor's own undo. Each action is turned into stroke additions and removals to apply and save; undoing an erase adds the same strokes back.
+     - A finished stroke is simplified (Ramer–Douglas–Peucker, half a pixel) before saving, and a very long scribble further until it fits the rules' size cap (`fitPoints`).
+   - **Saving sketches**: strokes are saved one at a time, in order (an undo can remove and re-add the same stroke), separately from the writing: they are their own documents, so the board's 500 ms write gap does not apply. A stroke undone before its save starts is dropped from the queue instead of being saved and deleted. The board's `hasSketches` flag rides on the writing's debounced save. Both share the save status ("Could not save your sketch." and Retry for strokes) and are flushed when leaving, renaming or deleting the board.
    - **Editor**: a Tiptap editor limited to plain lines of colored text (`src/editor/`: document, paragraph, text, the `Ink` mark, undo/redo, placeholder, `ContentLimit`). There is no bold, headings or lists. Tiptap's document format stays inside `WhiteboardSheet` and `src/editor/`: the sheet takes and emits a `BoardWriting` (`content` plus ink runs), so the rest of the app never sees it.
    - The `Ink` mark's plugin keeps the current ink in ProseMirror's stored marks after every change, so typing anywhere, even inside text of another color, writes in the marker in hand. Pasted and dropped text is recolored to it. Text a change brings in with no ink at all (ProseMirror reads some typing back from the DOM, e.g. typing over a select-all, which skips stored marks) gets it as well, so no text is ever uncolored. Undo restores the earlier colors.
    - At most 100,000 characters, counting each line break (`ContentLimit`; Tiptap's CharacterCount does not count line breaks). Writing is auto-saved 800 ms after the last keystroke. Saves run one at a time and re-check the text afterwards, so text typed during a save is written too and writes can never land out of order.
@@ -65,10 +74,20 @@ Boards live in the **named** Firestore database `vue-whiteboard-app`, not the pr
 - `titleSearchable`: string (lowercase `title`)
 - `content`: string (plain text; lines separated by `\n`)
 - `inks`: string, optional: the marker color of every character in `content`, as runs, e.g. `blue:24,red:7` (`encodeInks`/`decodeInks` in `src/utils/inks.ts`). Boards without it, or with runs that do not fit `content`, read as the default ink (blue) for the uncovered text rather than failing. A line break takes the ink of the text before it.
+- `hasSketches`: boolean, optional (missing means false): whether the board has strokes, for the collection's sketch icon
 - `createdAt`: `AuditStamp`
 - `updatedAt`: `AuditStamp`
 
 Where `AuditStamp` is `{ uid: string; time: Timestamp }` - who made the change and when.
+
+### `strokes` subcollection (`boards/{boardId}/strokes/{strokeId}`)
+
+One document per sketch stroke, keyed by a client-made UUID: `{ ownerUid, ink, pen, points, drawnAt }`. Strokes are only created and deleted, never edited (undoing an erase creates the same stroke again).
+
+- `points`: the stroke's `[x, y, pressure]` points in surface pixels, encoded by `encodePoints` (`src/utils/strokes.ts`): rounded to half a pixel and 1% pressure, each point after the first as a difference from the previous, comma-separated. A typical stroke is well under a kilobyte.
+- `drawnAt`: epoch ms from the client, which orders the strokes (later on top). Listing sorts client-side, so no composite index is needed.
+- `ownerUid` lets the rules check reads and deletes without reading the board; creating a stroke does read the board, to check its owner.
+- Deleting a board deletes its strokes first (in batches of up to 500), then the board.
 
 ### `accessRequests` collection
 
@@ -92,6 +111,7 @@ Signing in with Google is open to anyone, so the rules, not the client, are what
 - `accessRequests/{uid}` may only be written by that signed-in user, with exactly `email` (equal to the token's email), `displayName` (string of at most 200 characters, or null) and `requestedAt` (the server's time), and updated at most once a minute. Clients cannot read, list or delete requests; only the console can.
 - Users may `get` only their own `allowedUsers` entry, so the client can tell whether it has access (a missing entry reads as "no access", not an error). Listing and writing the allowlist are denied.
 - `content` is capped at 100,000 characters (`BOARD_CONTENT_MAX_LENGTH`), so no write can approach Firestore's 1 MiB document limit.
+- Strokes: created only by an allowlisted user on a board they own (a read of the board), with exactly `ownerUid` (theirs), `ink` (one of the six), `pen` (bool), `points` (at most 20,000 characters of comma-separated integers, `STROKE_POINTS_MAX_LENGTH`) and `drawnAt` (an integer). Read and delete only by their owner; list queries must filter on `ownerUid`. Never updated. `hasSketches` on a board, when present, must be a boolean.
 - `inks`, when present, must be well-formed runs of the six known inks and at most 20,000 characters long (`BOARD_INKS_MAX_LENGTH`, about 2,000 color changes). Rules cannot check that the runs add up to the length of `content`; the client tolerates a mismatch.
 - An update must come more than 500 ms after the board's last write (`updatedAt.time`). The first edit after a board is created is exempt (detected by `updatedAt == createdAt`), so writing straight away on a new board, or leaving it right after, is never rejected.
 - Not limited: how many boards a user creates, and reads, which rules cannot rate-limit. The allowlist is the protection for both. A per-user board cap would need a counter document checked with `getAfter()` in a batched write, and is only worth adding if an allowlisted account is abused.
@@ -109,7 +129,7 @@ Components never call Firestore directly. The layers are:
 
 - **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. `list()`, `get(id)` (returns `null` for a missing board or another user's board), `create(input)`, `update(id, changes)`, `rename(id, title)` and `delete(id)`. Unlike `get`, the writes reject for a missing or someone else's board, so the view can report the failure. `rename` trims the title and re-stamps `updatedAt`; a Firestore rename is an ordinary update, so the rules check the title and the write interval as for any update.
 - **`FirestoreBoardRepository`**: the only implementation for now. Maps Firestore documents to the domain `Board` and applies the owner filter required by the rules.
-- **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session: `FirestoreBoardRepository` for Google accounts, `LocalStorageBoardRepository` for demo mode. Callers build a repository per use instead of keeping one, so it always matches the current session and no cache has to be invalidated on sign-in or sign-out. Implementations must therefore be **cheap to construct and hold no state between calls** - `FirestoreBoardRepository` is just a uid alongside the shared `db` singleton. `LocalStorageBoardRepository` likewise reads and writes `localStorage` on each call rather than caching boards in a field.
+- **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session: `FirestoreBoardRepository` for Google accounts, `LocalStorageBoardRepository` for demo mode. `createSketchRepository(session)` does the same for strokes (`SketchRepository`: `list(boardId)`, `add(boardId, stroke)`, `remove(boardId, strokeId)`), with `FirestoreSketchRepository` and `LocalStorageSketchRepository`. The boards store's `getStrokes`, `addStroke` and `removeStroke` go through it. Callers build a repository per use instead of keeping one, so it always matches the current session and no cache has to be invalidated on sign-in or sign-out. Implementations must therefore be **cheap to construct and hold no state between calls** - `FirestoreBoardRepository` is just a uid alongside the shared `db` singleton. `LocalStorageBoardRepository` likewise reads and writes `localStorage` on each call rather than caching boards in a field.
 - **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call, discards a load that finishes after the session changed, and is reset on sign-out. `renameBoard` and `deleteBoard` update the loaded list only after the repository succeeds. `saveBoardWriting(id, writing)`, `renameBoard` and `deleteBoard` let errors propagate, because the views own the save status and dialogs rather than the store.
 
 ## Demo Mode
@@ -120,6 +140,7 @@ Visitors can use the app without an account, with their boards kept in this brow
 - **Session**: `SessionUser.kind` is `'google'` or `'demo'`. A demo session has uid `demo`, no email and no photo. The auth store's `enterDemo(name?)` starts one (returning `false` when there is no name given or saved, so the login page can ask), and the `isDemo` getter drives the app bar's "Demo" chip. The route guard only checks for a session, so demo sessions pass it.
 - **Profile** (`DemoProfileStorage`, key `whiteboard.demo.profile`): `{displayName, active}`. `active` is what keeps a demo session across reloads: `init()` resumes it before Firebase reports its (empty) auth state, and Firebase reporting no user does not end a demo session. Signing out clears `active` but keeps the name and the boards, which is how the next visit skips the name prompt. An unreadable profile counts as none.
 - **Boards** (`LocalStorageBoardRepository`, key `whiteboard.demo.boards`): a JSON array of boards, dates as ISO strings and inks as runs, re-normalized on read. Methods are `async`, so a storage error such as a full quota (browsers allow roughly 5 MB per origin) rejects and shows as a failed save. There are no Firestore rules here; the views' own limits (title length, content length) still apply.
+- **Strokes** (`LocalStorageSketchRepository`, one key per board, `whiteboard.demo.strokes.<boardId>`): each board's strokes, with points encoded as in Firestore, so saving a stroke does not rewrite every board. Deleting a demo board deletes its strokes, and "Not you?" deletes every board's strokes along with the boards.
 - **Not covered**: a demo visitor cannot carry their boards into a Google account, and clearing site data deletes them. Demo writes still wait out the 500 ms save interval meant for Firestore, which is harmless.
 
 ## Local Development
@@ -215,9 +236,10 @@ Last updated 2026-10-28.
 - The marker icon as the tab icon, with PNG fallbacks.
 - App Check (reCAPTCHA Enterprise) in the client; the key is registered on the dev project and requests show as verified.
 - A fixed-width board layout with a bundled marker font, so writing wraps identically everywhere (groundwork for sketch annotations).
+- Sketch mode: pen strokes in the marker colors over the writing (mouse, finger or pen, with pen pressure and palm rejection), a whole-stroke eraser, undo/redo, strokes saved one document each in a `strokes` subcollection (or `localStorage` in demo mode), and a sketch icon on cards.
 
 **Next**
-- Sketch mode: a Text/Sketch toggle on the marker tray; pen strokes in the marker colors over the writing, saved one document per stroke in a `strokes` subcollection; a whole-stroke eraser; undo/redo arrows for sketches; an icon on cards of boards with sketches.
+- Sketch mode follow-ups, if wanted: in-app zoom for phones (the fixed layout makes the writing small there), a sketch preview on the collection cards.
 - Enforce App Check for Cloud Firestore once the dashboard shows nearly all traffic verified, then consider Authentication.
 - A budget alert on the project's billing account.
 - Update the dependencies `npm audit` flags (in Firebase's gRPC, OpenTelemetry and uuid dependencies; fixes are available).

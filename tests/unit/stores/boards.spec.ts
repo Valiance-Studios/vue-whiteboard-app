@@ -1,21 +1,21 @@
 import type {Board} from '@/types/board';
-import type {BoardRepository} from '@/repositories';
+import type {BoardRepository, SketchRepository} from '@/repositories';
 
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {createPinia, setActivePinia} from 'pinia';
-import {createBoardRepository} from '@/repositories';
+import {createBoardRepository, createSketchRepository} from '@/repositories';
 import {useAuthStore} from '@/stores/auth';
 import {useBoardsStore} from '@/stores/boards';
 
 vi.mock('@/firebase', () => ({auth: {}, db: {}}));
-vi.mock('@/repositories', () => ({createBoardRepository: vi.fn()}));
+vi.mock('@/repositories', () => ({createBoardRepository: vi.fn(), createSketchRepository: vi.fn()}));
 
 const SESSION_USER = {uid: 'u1', kind: 'google' as const, displayName: 'Test', email: null, photoURL: null};
 
 function makeBoard(id: string, title: string): Board {
   const stamp = {uid: 'u1', time: new Date('2026-01-01T00:00:00Z')};
 
-  return {id, title, titleSearchable: title.toLowerCase(), content: '', inks: [], createdAt: stamp, updatedAt: stamp};
+  return {id, title, titleSearchable: title.toLowerCase(), content: '', inks: [], hasSketches: false, createdAt: stamp, updatedAt: stamp};
 }
 
 function titlesOf(boards: Board[]): string[] {
@@ -24,6 +24,7 @@ function titlesOf(boards: Board[]): string[] {
 
 describe('boards store', () => {
   let repository: {[method in keyof BoardRepository]: ReturnType<typeof vi.fn>};
+  let sketches: {[method in keyof SketchRepository]: ReturnType<typeof vi.fn>};
 
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -31,6 +32,8 @@ describe('boards store', () => {
 
     repository = {list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), rename: vi.fn(), delete: vi.fn()};
     vi.mocked(createBoardRepository).mockReturnValue(repository as unknown as BoardRepository);
+    sketches = {list: vi.fn(), add: vi.fn(), remove: vi.fn()};
+    vi.mocked(createSketchRepository).mockReturnValue(sketches as unknown as SketchRepository);
   });
 
   describe('load', () => {
@@ -172,17 +175,31 @@ describe('boards store', () => {
   });
 
   it('saves board writing through the repository', async () => {
-    const writing = {content: 'Milk, eggs', inks: [{ink: 'red' as const, length: 10}]};
+    const writing = {content: 'Milk, eggs', inks: [{ink: 'red' as const, length: 10}], hasSketches: false};
 
     await useBoardsStore().saveBoardWriting('1', writing);
 
     expect(repository.update).toHaveBeenCalledWith('1', writing);
   });
 
+  it('loads, adds and removes strokes through the sketch repository', async () => {
+    const stroke = {id: 's1', ink: 'red' as const, pen: false, points: [[1, 2, 0.5] as [number, number, number]], drawnAt: 1};
+    sketches.list.mockResolvedValue([stroke]);
+    const store = useBoardsStore();
+
+    await expect(store.getStrokes('1')).resolves.toEqual([stroke]);
+    await store.addStroke('1', stroke);
+    await store.removeStroke('1', 's1');
+
+    expect(sketches.list).toHaveBeenCalledWith('1');
+    expect(sketches.add).toHaveBeenCalledWith('1', stroke);
+    expect(sketches.remove).toHaveBeenCalledWith('1', 's1');
+  });
+
   it('propagates a failed save to the caller', async () => {
     repository.update.mockRejectedValue(new Error('permission-denied'));
 
-    await expect(useBoardsStore().saveBoardWriting('1', {content: 'Milk, eggs', inks: []})).rejects.toThrow('permission-denied');
+    await expect(useBoardsStore().saveBoardWriting('1', {content: 'Milk, eggs', inks: [], hasSketches: false})).rejects.toThrow('permission-denied');
   });
 
   it('refuses to access boards without a session', async () => {

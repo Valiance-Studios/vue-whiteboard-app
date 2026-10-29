@@ -53,3 +53,41 @@ export async function writeOnBoard(page: Page, text: string): Promise<void> {
 export function saveStatus(page: Page): Locator {
   return page.getByRole('status');
 }
+
+/** The strokes sketched on the board. */
+export function strokes(page: Page): Locator {
+  return page.locator('.sketch-layer__stroke');
+}
+
+/** A button on the marker tray, e.g. "Sketch" or "Eraser". Scoped to the tray, so a board's title cannot match. */
+export function trayButton(page: Page, name: string): Locator {
+  return page.locator('.marker-tray').getByRole('button', {name, exact: true});
+}
+
+/** Switches the board between typing and sketching. */
+export async function setBoardMode(page: Page, mode: 'Text' | 'Sketch'): Promise<void> {
+  await trayButton(page, mode).click();
+}
+
+/**
+ * Drags the mouse across the board, from and to points given as fractions of the board's width and height,
+ * as the pen or the eraser would.
+ */
+export async function dragOnBoard(page: Page, from: [number, number], to: [number, number]): Promise<void> {
+  const surface = page.locator('.whiteboard-sheet__surface');
+  await surface.scrollIntoViewIfNeeded();
+  const box = await surface.boundingBox();
+
+  if (!box) {
+    throw new Error('The board is not on screen.');
+  }
+
+  const at = ([x, y]: [number, number]): [number, number] => [box.x + box.width * x, box.y + box.height * y];
+  const [startX, startY] = at(from);
+  const [endX, endY] = at(to);
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY, {steps: 12});
+  await page.mouse.up();
+}

@@ -18,3 +18,6 @@ export const BOARD_INKS_MAX_LENGTH = 20_000;
  * Text therefore wraps at the same places everywhere, so sketches drawn over it stay on the words they mark.
  */
 export const BOARD_SURFACE_WIDTH = 960;
+
+/** The longest encoded stroke (see `encodePoints`). Keep in sync with `isValidStroke` in `firestore.rules`. */
+export const STROKE_POINTS_MAX_LENGTH = 20_000;

@@ -1,5 +1,83 @@
 <template>
   <div class="marker-tray">
+    <!-- The ledge is light aluminium in both themes, so its controls always use the light theme. -->
+    <v-theme-provider theme="light">
+      <div class="marker-tray__tools">
+        <v-btn-toggle
+          :model-value="mode"
+          mandatory
+          divided
+          variant="outlined"
+          density="comfortable"
+          rounded="lg"
+          color="primary"
+          aria-label="Board mode"
+          @update:model-value="$emit('mode', $event)"
+        >
+          <v-btn
+            value="text"
+            prepend-icon="mdi-format-text"
+          >
+            Text
+          </v-btn>
+          <v-btn
+            value="sketch"
+            prepend-icon="mdi-draw"
+          >
+            Sketch
+          </v-btn>
+        </v-btn-toggle>
+
+        <template v-if="mode === 'sketch'">
+          <v-btn-toggle
+            :model-value="tool"
+            mandatory
+            divided
+            variant="outlined"
+            density="comfortable"
+            rounded="lg"
+            color="primary"
+            aria-label="Sketch tool"
+            @update:model-value="$emit('tool', $event)"
+          >
+            <v-btn
+              value="pen"
+              icon="mdi-pen"
+              aria-label="Pen"
+              title="Pen"
+            />
+            <v-btn
+              value="eraser"
+              icon="mdi-eraser"
+              aria-label="Eraser"
+              title="Eraser: removes whole strokes"
+            />
+          </v-btn-toggle>
+
+          <div class="marker-tray__history">
+            <v-btn
+              icon="mdi-undo"
+              variant="text"
+              density="comfortable"
+              aria-label="Undo sketch"
+              title="Undo sketch"
+              :disabled="!canUndo"
+              @click="$emit('undo')"
+            />
+            <v-btn
+              icon="mdi-redo"
+              variant="text"
+              density="comfortable"
+              aria-label="Redo sketch"
+              title="Redo sketch"
+              :disabled="!canRedo"
+              @click="$emit('redo')"
+            />
+          </div>
+        </template>
+      </div>
+    </v-theme-provider>
+
     <span class="marker-tray__label">Marker · {{ currentName }}</span>
 
     <div
@@ -29,12 +107,19 @@
 
 <script lang="ts">
 import type {Marker, MarkerInk} from '@/constants/markers';
+import type {SketchTool} from '@/components/SketchLayer.vue';
 import type {PropType} from 'vue';
 
 import {defineComponent} from 'vue';
 import {MARKERS} from '@/constants/markers';
 
-/** The ledge under the board holding the markers. Picking one is reported even if it is already in hand. */
+/** Whether the board takes typing or sketching. */
+export type BoardMode = 'text' | 'sketch';
+
+/**
+ * The ledge under the board: the Text/Sketch switch, in sketch mode the pen, eraser and undo/redo, and the
+ * markers. Picking a marker is reported even if it is already in hand.
+ */
 export default defineComponent({
   name: 'MarkerTray',
 
@@ -43,10 +128,30 @@ export default defineComponent({
       type: String as PropType<MarkerInk>,
       required: true,
     },
+    mode: {
+      type: String as PropType<BoardMode>,
+      required: true,
+    },
+    tool: {
+      type: String as PropType<SketchTool>,
+      required: true,
+    },
+    canUndo: {
+      type: Boolean,
+      required: true,
+    },
+    canRedo: {
+      type: Boolean,
+      required: true,
+    },
   },
 
   emits: {
     pick: (ink: MarkerInk) => Boolean(ink),
+    mode: (mode: BoardMode) => Boolean(mode),
+    tool: (tool: SketchTool) => Boolean(tool),
+    undo: () => true,
+    redo: () => true,
   },
 
   data() {
@@ -74,12 +179,25 @@ export default defineComponent({
   background: linear-gradient(180deg, #cbd2db 0%, #aab3bf 100%);
   box-shadow: 0 6px 14px rgb(28 35 48 / 18%);
 
+  &__tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+  }
+
+  &__history {
+    display: flex;
+  }
+
   &__label {
     font-size: 0.8125rem;
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: #2c3440;
+    // Pushes the label and markers to the right of the tools.
+    margin-left: auto;
   }
 
   &__markers {
@@ -87,7 +205,6 @@ export default defineComponent({
     flex-wrap: wrap;
     align-items: flex-end;
     gap: 14px;
-    margin-left: auto;
   }
 }
 
