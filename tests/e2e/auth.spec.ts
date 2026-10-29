@@ -1,4 +1,5 @@
 import {expect, test} from '@playwright/test';
+import {listDocuments} from '../../scripts/emulator-admin.ts';
 import {allowUser, createTestUser, submitSignIn} from './support/auth';
 
 test('unauthenticated visit to a board redirects to login', async ({page}) => {
@@ -30,6 +31,14 @@ test('an account that is not on the allowlist is signed out and told why', async
 
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByText(`${user.email} does not have access to this app.`)).toBeVisible();
+  await expect(page.getByText('Your request has been recorded for the app\'s owner.')).toBeVisible();
+
+  // The request is on record for the owner, with the account's details.
+  const requests = await listDocuments('accessRequests');
+  expect(requests.find((fields) => fields.email?.stringValue === user.email)).toMatchObject({
+    displayName: {stringValue: user.displayName},
+    requestedAt: {timestampValue: expect.any(String) as unknown},
+  });
 
   // Once an admin adds them, the same account can sign in.
   await allowUser(user);
