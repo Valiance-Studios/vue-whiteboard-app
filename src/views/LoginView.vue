@@ -21,6 +21,16 @@
 
           <v-card-text>
             <v-alert
+              v-if="authStore.deniedUser"
+              type="warning"
+              variant="tonal"
+              class="mb-4"
+              density="compact"
+            >
+              {{ authStore.deniedUser.email ?? 'This account' }} does not have access to this app.
+            </v-alert>
+
+            <v-alert
               v-if="errorMessage"
               type="error"
               variant="tonal"

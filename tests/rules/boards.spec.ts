@@ -21,7 +21,13 @@ import {
 
 const OWNER = 'alice';
 const OTHER = 'bob';
+/** Signed in, but not on the allowlist. */
+const STRANGER = 'mallory';
 const BOARD_ID = 'alice-board';
+const ALLOWED_USERS = [OWNER, OTHER];
+
+/** Comfortably outside the rules' minimum gap between writes to one board. */
+const LONG_AGO_MS = 60_000;
 
 let testEnv: RulesTestEnvironment;
 
@@ -29,8 +35,17 @@ function firestoreOf(context: RulesTestContext): Firestore {
   return context.firestore() as unknown as Firestore;
 }
 
-function db(uid: string | null): Firestore {
-  return firestoreOf(uid ? testEnv.authenticatedContext(uid) : testEnv.unauthenticatedContext());
+function emailOf(uid: string): string {
+  return `${uid}@example.com`;
+}
+
+/** A Google user whose email is verified unless stated otherwise. */
+function db(uid: string | null, claims: {email?: string; email_verified?: boolean} = {}): Firestore {
+  if (uid === null) {
+    return firestoreOf(testEnv.unauthenticatedContext());
+  }
+
+  return firestoreOf(testEnv.authenticatedContext(uid, {email: emailOf(uid), email_verified: true, ...claims}));
 }
 
 function selfStamp(uid: string) {
@@ -62,17 +77,77 @@ afterAll(async () => {
   await testEnv.cleanup();
 });
 
-beforeEach(async () => {
-  await testEnv.clearFirestore();
+/** Seeds Alice's board, last written `updatedAgoMs` ago. Created long ago, so it has been edited since. */
+async function seedBoard(updatedAgoMs = LONG_AGO_MS): Promise<void> {
   await testEnv.withSecurityRulesDisabled(async (context) => {
-    const stamp = {uid: OWNER, time: Timestamp.now()};
     await setDoc(doc(firestoreOf(context), 'boards', BOARD_ID), {
       title: 'Alice Board',
       titleSearchable: 'alice board',
       content: 'hello',
-      createdAt: stamp,
-      updatedAt: stamp,
+      createdAt: {uid: OWNER, time: Timestamp.fromMillis(Date.now() - 2 * LONG_AGO_MS)},
+      updatedAt: {uid: OWNER, time: Timestamp.fromMillis(Date.now() - updatedAgoMs)},
     });
+  });
+}
+
+beforeEach(async () => {
+  await testEnv.clearFirestore();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await Promise.all(ALLOWED_USERS.map((uid) => setDoc(doc(firestoreOf(context), 'allowedUsers', emailOf(uid)), {})));
+  });
+  await seedBoard();
+});
+
+describe('allowedUsers', () => {
+  it('allows users to check their own entry', async () => {
+    await assertSucceeds(getDoc(doc(db(OWNER), 'allowedUsers', emailOf(OWNER))));
+  });
+
+  it('allows a user who is not listed to find out', async () => {
+    await assertSucceeds(getDoc(doc(db(STRANGER), 'allowedUsers', emailOf(STRANGER))));
+  });
+
+  it('matches the entry whatever the case of the signed-in email', async () => {
+    await assertSucceeds(getDoc(doc(db(OWNER, {email: 'Alice@Example.com'}), 'allowedUsers', emailOf(OWNER))));
+  });
+
+  it('denies reading another user\'s entry', async () => {
+    await assertFails(getDoc(doc(db(STRANGER), 'allowedUsers', emailOf(OWNER))));
+  });
+
+  it('denies listing the allowlist', async () => {
+    await assertFails(getDocs(collection(db(OWNER), 'allowedUsers')));
+  });
+
+  it('denies adding to the allowlist', async () => {
+    await assertFails(setDoc(doc(db(STRANGER), 'allowedUsers', emailOf(STRANGER)), {}));
+  });
+
+  it('denies unauthenticated reads', async () => {
+    await assertFails(getDoc(doc(db(null), 'allowedUsers', emailOf(OWNER))));
+  });
+});
+
+describe('boards: access', () => {
+  it('denies a signed-in user who is not on the allowlist', async () => {
+    await assertFails(getDocs(query(collection(db(STRANGER), 'boards'), where('createdAt.uid', '==', STRANGER))));
+    await assertFails(addDoc(collection(db(STRANGER), 'boards'), newBoard(STRANGER)));
+  });
+
+  it('denies an allowlisted email that is not verified', async () => {
+    await assertFails(getDoc(doc(db(OWNER, {email_verified: false}), 'boards', BOARD_ID)));
+  });
+
+  it('allows an allowlisted email in another case', async () => {
+    await assertSucceeds(getDoc(doc(db(OWNER, {email: 'ALICE@example.com'}), 'boards', BOARD_ID)));
+  });
+
+  it('denies the owner once they are removed from the allowlist', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await deleteDoc(doc(firestoreOf(context), 'allowedUsers', emailOf(OWNER)));
+    });
+
+    await assertFails(getDoc(doc(db(OWNER), 'boards', BOARD_ID)));
   });
 });
 
@@ -134,6 +209,14 @@ describe('boards: create', () => {
   it('denies a title over the maximum length', async () => {
     await assertFails(addDoc(collection(db(OWNER), 'boards'), newBoard(OWNER, 'a'.repeat(101))));
   });
+
+  it('allows content at the maximum length', async () => {
+    await assertSucceeds(addDoc(collection(db(OWNER), 'boards'), {...newBoard(OWNER), content: 'a'.repeat(100_000)}));
+  });
+
+  it('denies content over the maximum length', async () => {
+    await assertFails(addDoc(collection(db(OWNER), 'boards'), {...newBoard(OWNER), content: 'a'.repeat(100_001)}));
+  });
 });
 
 describe('boards: update', () => {
@@ -149,6 +232,29 @@ describe('boards: update', () => {
       content: 'hijacked',
       updatedAt: selfStamp(OTHER),
     }));
+  });
+
+  it('denies content over the maximum length', async () => {
+    await assertFails(updateDoc(doc(db(OWNER), 'boards', BOARD_ID), {
+      content: 'a'.repeat(100_001),
+      updatedAt: selfStamp(OWNER),
+    }));
+  });
+
+  it('denies a write that follows the last one too closely', async () => {
+    await seedBoard(0);
+
+    await assertFails(updateDoc(doc(db(OWNER), 'boards', BOARD_ID), {
+      content: 'too soon',
+      updatedAt: selfStamp(OWNER),
+    }));
+  });
+
+  it('allows the first edit straight after creating a board, but not a second', async () => {
+    const ref = await addDoc(collection(db(OWNER), 'boards'), newBoard(OWNER));
+
+    await assertSucceeds(updateDoc(ref, {content: 'first', updatedAt: selfStamp(OWNER)}));
+    await assertFails(updateDoc(ref, {content: 'second', updatedAt: selfStamp(OWNER)}));
   });
 
   it('denies the owner changing createdAt (ownership transfer)', async () => {

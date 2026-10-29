@@ -5,7 +5,9 @@ import type {Firestore} from 'firebase/firestore';
 import {readFileSync} from 'node:fs';
 import {afterAll, beforeAll, beforeEach, describe, expect, it} from 'vitest';
 import {initializeTestEnvironment} from '@firebase/rules-unit-testing';
+import {doc, setDoc} from 'firebase/firestore';
 import {FirestoreBoardRepository} from '@/repositories/FirestoreBoardRepository';
+import {BOARD_MIN_SAVE_INTERVAL_MS} from '@/constants/board';
 
 // Runs against the Firestore emulator with security rules enforced, so it also
 // verifies that the repository's queries are ones the rules allow.
@@ -15,8 +17,21 @@ const OTHER = 'bob';
 
 let testEnv: RulesTestEnvironment;
 
+function emailOf(uid: string): string {
+  return `${uid}@example.com`;
+}
+
 function repositoryFor(uid: string): FirestoreBoardRepository {
-  return new FirestoreBoardRepository(testEnv.authenticatedContext(uid).firestore() as unknown as Firestore, uid);
+  const context = testEnv.authenticatedContext(uid, {email: emailOf(uid), email_verified: true});
+
+  return new FirestoreBoardRepository(context.firestore() as unknown as Firestore, uid);
+}
+
+/** Waits out the rules' minimum gap between writes to one board. */
+function waitForSaveInterval(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, BOARD_MIN_SAVE_INTERVAL_MS + 100);
+  });
 }
 
 beforeAll(async () => {
@@ -36,6 +51,10 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await testEnv.clearFirestore();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore() as unknown as Firestore;
+    await Promise.all([OWNER, OTHER].map((uid) => setDoc(doc(db, 'allowedUsers', emailOf(uid)), {})));
+  });
 });
 function titlesOf(boards: Board[]): string[] {
   return boards.map((board) => board.title).sort();
@@ -120,6 +139,7 @@ describe('FirestoreBoardRepository', () => {
       const id = await repository.create({title: 'Notes'});
 
       await repository.update(id, {content: 'first'});
+      await waitForSaveInterval();
       await repository.update(id, {content: 'second'});
 
       await expect(repository.get(id)).resolves.toMatchObject({content: 'second'});

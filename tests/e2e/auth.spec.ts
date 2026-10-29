@@ -1,4 +1,5 @@
 import {expect, test} from '@playwright/test';
+import {allowUser, createTestUser, submitSignIn} from './support/auth';
 
 test('unauthenticated visit to a board redirects to login', async ({page}) => {
   await page.goto('/boards/some-board');
@@ -20,4 +21,19 @@ test('closing the sign-in popup leaves the login page ready without an error', a
   await expect(signInButton).toBeEnabled();
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page).toHaveURL(/\/login$/);
+});
+
+test('an account that is not on the allowlist is signed out and told why', async ({page}) => {
+  const user = createTestUser();
+
+  await submitSignIn(page, user);
+
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByText(`${user.email} does not have access to this app.`)).toBeVisible();
+
+  // Once an admin adds them, the same account can sign in.
+  await allowUser(user);
+  await submitSignIn(page, user);
+
+  await expect(page).toHaveURL(/\/boards$/);
 });

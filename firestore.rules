@@ -6,6 +6,18 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Allowlist ids are lowercase emails, so a differently cased sign-in still matches.
+    function signedInEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    // Signing in is open to any Google account; using Firestore is limited to allowlisted, verified emails.
+    function isAllowed() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && exists(/databases/$(database)/documents/allowedUsers/$(signedInEmail()));
+    }
+
     // A board's owner is the user who created it.
     function isOwner(data) {
       return data.createdAt.uid == request.auth.uid;
@@ -18,31 +30,46 @@ service cloud.firestore {
     function hasValidFields(data) {
       return data.keys().hasOnly(['title', 'titleSearchable', 'content', 'createdAt', 'updatedAt'])
         && data.title is string
-        // Keep the max length in sync with BOARD_TITLE_MAX_LENGTH in src/constants/board.ts.
+        // Keep the max lengths in sync with BOARD_TITLE_MAX_LENGTH and BOARD_CONTENT_MAX_LENGTH in src/constants/board.ts.
         && data.title.trim().size() > 0
         && data.title.size() <= 100
         && data.titleSearchable == data.title.lower()
-        && data.content is string;
+        && data.content is string
+        && data.content.size() <= 100000;
+    }
+
+    // Limits how often one board can be written. The first edit after creating a board is exempt,
+    // so writing straight away on a new board is never rejected.
+    // Keep the interval in sync with BOARD_MIN_SAVE_INTERVAL_MS in src/constants/board.ts.
+    function isOutsideSaveInterval(data) {
+      return data.updatedAt == data.createdAt
+        || request.time > data.updatedAt.time + duration.value(500, 'ms');
+    }
+
+    // The allowlist is managed in the Firebase console. Users may only check whether they themselves are on it.
+    match /allowedUsers/{email} {
+      allow get: if isSignedIn() && signedInEmail() == email;
     }
 
     match /boards/{boardId} {
       // Reading a missing board is denied the same as reading another user's board,
       // so the existence of other users' boards is never revealed.
       // List queries must filter on `createdAt.uid == <own uid>` to be allowed.
-      allow read: if isSignedIn() && isOwner(resource.data);
+      allow read: if isAllowed() && isOwner(resource.data);
 
-      allow create: if isSignedIn()
+      allow create: if isAllowed()
         && hasValidFields(request.resource.data)
         && isStampedBySelf(request.resource.data.createdAt)
         && isStampedBySelf(request.resource.data.updatedAt);
 
-      allow update: if isSignedIn()
+      allow update: if isAllowed()
         && isOwner(resource.data)
+        && isOutsideSaveInterval(resource.data)
         && hasValidFields(request.resource.data)
         && request.resource.data.createdAt == resource.data.createdAt
         && isStampedBySelf(request.resource.data.updatedAt);
 
-      allow delete: if isSignedIn() && isOwner(resource.data);
+      allow delete: if isAllowed() && isOwner(resource.data);
     }
   }
 }
