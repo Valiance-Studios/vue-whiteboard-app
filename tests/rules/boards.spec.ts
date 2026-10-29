@@ -274,6 +274,14 @@ describe('boards: update', () => {
     await assertFails(updateDoc(doc(db(OWNER), 'boards', BOARD_ID), {content: 'hello', inks, updatedAt: selfStamp(OWNER)}));
   });
 
+  it('allows saving whether the board has sketches', async () => {
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'boards', BOARD_ID), {content: 'hello', hasSketches: true, updatedAt: selfStamp(OWNER)}));
+  });
+
+  it('denies a sketch flag that is not a boolean', async () => {
+    await assertFails(updateDoc(doc(db(OWNER), 'boards', BOARD_ID), {content: 'hello', hasSketches: 'yes', updatedAt: selfStamp(OWNER)}));
+  });
+
   it('denies a write that follows the last one too closely', async () => {
     await seedBoard(0);
 

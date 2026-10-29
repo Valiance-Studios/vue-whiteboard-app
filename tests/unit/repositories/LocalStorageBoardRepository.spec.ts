@@ -40,17 +40,17 @@ describe('LocalStorageBoardRepository', () => {
     const created = await repository().get(id);
     const inks = [{ink: 'blue' as const, length: 6}, {ink: 'red' as const, length: 5}];
 
-    await repository().update(id, {content: 'Hello world', inks});
+    await repository().update(id, {content: 'Hello world', inks, hasSketches: false});
     const updated = await repository().get(id);
 
-    expect(updated).toMatchObject({content: 'Hello world', inks});
+    expect(updated).toMatchObject({content: 'Hello world', inks, hasSketches: false});
     expect(updated?.createdAt).toEqual(created?.createdAt);
     expect(updated?.updatedAt.time.getTime()).toBeGreaterThanOrEqual(created?.updatedAt.time.getTime() ?? 0);
   });
 
   it('renames a board, trimming the title and keeping the writing', async () => {
     const id = await repository().create({title: 'Old'});
-    await repository().update(id, {content: 'Hi', inks: [{ink: 'red', length: 2}]});
+    await repository().update(id, {content: 'Hi', inks: [{ink: 'red', length: 2}], hasSketches: false});
 
     await repository().rename(id, '  New Title  ');
 
@@ -73,7 +73,7 @@ describe('LocalStorageBoardRepository', () => {
   });
 
   it('rejects an update to a board that does not exist', async () => {
-    await expect(repository().update('missing', {content: 'anything', inks: []})).rejects.toThrow();
+    await expect(repository().update('missing', {content: 'anything', inks: [], hasSketches: false})).rejects.toThrow();
   });
 
   it('rejects a save that does not fit in storage', async () => {
@@ -82,7 +82,7 @@ describe('LocalStorageBoardRepository', () => {
       throw new DOMException('Quota exceeded', 'QuotaExceededError');
     });
 
-    await expect(repository().update(id, {content: 'x', inks: []})).rejects.toThrow('Quota exceeded');
+    await expect(repository().update(id, {content: 'x', inks: [], hasSketches: false})).rejects.toThrow('Quota exceeded');
     setItem.mockRestore();
   });
 

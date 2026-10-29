@@ -21,6 +21,8 @@ export interface BoardWriting {
 
 /** A whiteboard as used by the application layer. */
 export interface Board extends BoardWriting {
+  /** Whether anything is sketched on the board, so the collection can mark it without loading the strokes. */
+  hasSketches: boolean;
   id: string;
   title: string;
   /** Lowercase copy of `title`, used for prefix search. */
@@ -34,5 +36,7 @@ export interface NewBoardInput {
   title: string;
 }
 
-/** User-supplied fields for updating an existing board. */
-export type BoardUpdateInput = BoardWriting;
+/** User-supplied fields for updating an existing board. The strokes themselves are saved separately. */
+export interface BoardUpdateInput extends BoardWriting {
+  hasSketches: boolean;
+}

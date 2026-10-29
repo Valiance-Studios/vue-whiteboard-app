@@ -19,32 +19,59 @@
             v-if="editor"
             :editor="editor"
           />
+          <sketch-layer
+            :strokes="strokeList"
+            :active="mode === 'sketch'"
+            :tool="tool"
+            :ink="ink"
+            @draw="draw"
+            @erase="erase"
+          />
         </div>
       </div>
     </div>
 
     <marker-tray
       :ink="ink"
+      :mode="mode"
+      :tool="tool"
+      :can-undo="history.canUndo"
+      :can-redo="history.canRedo"
       @pick="pickMarker"
+      @mode="setMode"
+      @tool="tool = $event"
+      @undo="apply(history.undo())"
+      @redo="apply(history.redo())"
     />
   </div>
 </template>
 
 <script lang="ts">
+import type {BoardMode} from '@/components/MarkerTray.vue';
+import type {SketchTool} from '@/components/SketchLayer.vue';
 import type {MarkerInk} from '@/constants/markers';
+import type {SketchChange} from '@/sketch/SketchHistory';
 import type {BoardWriting} from '@/types/board';
+import type {Stroke} from '@/types/sketch';
 import type {CSSProperties, PropType, Raw} from 'vue';
 
 import {defineComponent, markRaw} from 'vue';
 import {Editor, EditorContent} from '@tiptap/vue-3';
 import MarkerTray from '@/components/MarkerTray.vue';
+import SketchLayer from '@/components/SketchLayer.vue';
 import {BOARD_SURFACE_WIDTH} from '@/constants/board';
 import {DEFAULT_INK, markerColor} from '@/constants/markers';
 import {boardExtensions, fromEditorDoc, toEditorContent} from '@/editor';
+import {SketchHistory} from '@/sketch/SketchHistory';
+import {sketchBottom} from '@/utils/strokes';
+
+/** Room left under the lowest stroke, so there is always somewhere to carry on sketching. */
+const SKETCH_MARGIN = 120;
 
 /**
- * The board's writing surface and its marker tray. `writing` is only read when the sheet is created;
- * give the sheet a new `key` to show different writing.
+ * The board's writing surface, the sketch drawn over it, and its marker tray. `writing` and `strokes` are only
+ * read when the sheet is created; give the sheet a new `key` to show a different board. Changes are reported
+ * for the parent to save: `change` for the writing, `sketch` for strokes added and removed.
  */
 export default defineComponent({
   name: 'WhiteboardSheet',
@@ -52,6 +79,7 @@ export default defineComponent({
   components: {
     EditorContent,
     MarkerTray,
+    SketchLayer,
   },
 
   props: {
@@ -59,10 +87,16 @@ export default defineComponent({
       type: Object as PropType<BoardWriting>,
       required: true,
     },
+    strokes: {
+      type: Array as PropType<Stroke[]>,
+      required: true,
+    },
   },
 
   emits: {
     change: (writing: BoardWriting) => Boolean(writing),
+    /** Strokes to save, and how many the board now has. */
+    sketch: (changes: SketchChange[], strokeCount: number) => changes.length > 0 && strokeCount >= 0,
   },
 
   data() {
@@ -75,6 +109,11 @@ export default defineComponent({
       /** The surface's unscaled height, which grows with the writing. */
       surfaceHeight: 0,
       resizeObserver: null as Raw<ResizeObserver> | null,
+      mode: 'text' as BoardMode,
+      tool: 'pen' as SketchTool,
+      /** The strokes on the board now, oldest first. */
+      strokeList: [...this.strokes],
+      history: new SketchHistory(),
     };
   },
 
@@ -84,7 +123,12 @@ export default defineComponent({
     },
 
     surfaceStyle(): CSSProperties {
-      return {width: `${BOARD_SURFACE_WIDTH}px`, transform: `scale(${this.scale})`};
+      return {
+        width: `${BOARD_SURFACE_WIDTH}px`,
+        // Tall enough for the lowest stroke, which may be below the writing.
+        minHeight: `${sketchBottom(this.strokeList) + SKETCH_MARGIN}px`,
+        transform: `scale(${this.scale})`,
+      };
     },
   },
 
@@ -105,9 +149,10 @@ export default defineComponent({
       },
     }));
 
-    // The frame's width sets the scale, and the writing's height sets the frame's height.
+    // The frame's width sets the scale, and the writing's height sets the frame's height. Measured on the next
+    // frame: resizing the frame inside the observer's own callback would trip its "loop" error.
     this.resizeObserver = markRaw(new ResizeObserver(() => {
-      this.measure();
+      requestAnimationFrame(() => this.measure());
     }));
     this.resizeObserver.observe(this.$refs.viewport as HTMLElement);
     this.resizeObserver.observe(this.$refs.surface as HTMLElement);
@@ -134,7 +179,48 @@ export default defineComponent({
 
     pickMarker(ink: MarkerInk): void {
       this.ink = ink;
-      this.editor?.chain().focus().setInk(ink).run();
+
+      // In sketch mode the marker only colors new strokes; the writing is left alone.
+      if (this.mode === 'text') {
+        this.editor?.chain().focus().setInk(ink).run();
+      }
+    },
+
+    /** In sketch mode the writing cannot be edited, so pointers and taps go to the sketch. */
+    setMode(mode: BoardMode): void {
+      this.mode = mode;
+      this.editor?.setEditable(mode === 'text');
+
+      if (mode === 'text') {
+        this.editor?.commands.focus();
+      }
+    },
+
+    draw(stroke: Stroke): void {
+      this.apply(this.history.record({type: 'draw', stroke}));
+    },
+
+    erase(strokes: Stroke[]): void {
+      this.apply(this.history.record({type: 'erase', strokes}));
+    },
+
+    /** Shows the changes, and reports them for saving. */
+    apply(changes: SketchChange[]): void {
+      if (changes.length === 0) {
+        return;
+      }
+
+      for (const change of changes) {
+        if (change.type === 'add') {
+          // Kept in drawing order, so a restored stroke goes back beneath the ones drawn after it.
+          const index = this.strokeList.findIndex((stroke) => stroke.drawnAt > change.stroke.drawnAt);
+          this.strokeList.splice(index === -1 ? this.strokeList.length : index, 0, change.stroke);
+        } else {
+          this.strokeList = this.strokeList.filter((stroke) => stroke.id !== change.stroke.id);
+        }
+      }
+
+      this.$emit('sketch', changes, this.strokeList.length);
     },
   },
 });
@@ -174,6 +260,8 @@ export default defineComponent({
   // Everything inside is in surface pixels: sizes are px, not rem, because a rem follows the user's
   // browser font size and would change where lines wrap from one person to the next.
   &__surface {
+    // The sketch layer covers the surface exactly, in the same surface pixels as the writing.
+    position: relative;
     padding: 16px 28px 28px;
     transform-origin: top left;
   }

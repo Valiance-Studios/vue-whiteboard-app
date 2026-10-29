@@ -37,7 +37,7 @@ service cloud.firestore {
     }
 
     function hasValidFields(data) {
-      return data.keys().hasOnly(['title', 'titleSearchable', 'content', 'inks', 'createdAt', 'updatedAt'])
+      return data.keys().hasOnly(['title', 'titleSearchable', 'content', 'inks', 'hasSketches', 'createdAt', 'updatedAt'])
         && data.title is string
         // Keep the max lengths in sync with BOARD_TITLE_MAX_LENGTH and BOARD_CONTENT_MAX_LENGTH in src/constants/board.ts.
         && data.title.trim().size() > 0
@@ -45,7 +45,8 @@ service cloud.firestore {
         && data.titleSearchable == data.title.lower()
         && data.content is string
         && data.content.size() <= 100000
-        && (!('inks' in data) || isValidInks(data.inks));
+        && (!('inks' in data) || isValidInks(data.inks))
+        && (!('hasSketches' in data) || data.hasSketches is bool);
     }
 
     // Limits how often one board can be written. The first edit after creating a board is exempt,
@@ -101,6 +102,29 @@ service cloud.firestore {
         && isStampedBySelf(request.resource.data.updatedAt);
 
       allow delete: if isAllowed() && isOwner(resource.data);
+
+      // Sketch strokes, one document each. Strokes are only created and deleted, never edited.
+      // Keep in sync with FirestoreSketchRepository and encodePoints (src/utils/strokes.ts).
+      match /strokes/{strokeId} {
+        function isValidStroke(data) {
+          return data.keys().hasOnly(['ownerUid', 'ink', 'pen', 'points', 'drawnAt'])
+            && data.ownerUid == request.auth.uid
+            && data.ink in ['black', 'blue', 'red', 'green', 'purple', 'orange']
+            && data.pen is bool
+            && data.points is string
+            && data.points.size() <= 20000
+            && data.points.matches('-?[0-9]+(,-?[0-9]+)*')
+            && data.drawnAt is int;
+        }
+
+        // The stroke's owner is stored on it, so reads and deletes need no read of the board.
+        allow read, delete: if isAllowed() && resource.data.ownerUid == request.auth.uid;
+
+        // Creating checks the board too, so nobody can add strokes under someone else's board.
+        allow create: if isAllowed()
+          && isValidStroke(request.resource.data)
+          && isOwner(get(/databases/$(database)/documents/boards/$(boardId)).data);
+      }
     }
   }
 }

@@ -3,6 +3,7 @@ import type {BoardRepository} from './BoardRepository';
 
 import {normalizeInks} from '@/utils/inks';
 import {toSearchable} from '@/utils/search';
+import {clearAllDemoStrokes, clearDemoStrokes} from './LocalStorageSketchRepository';
 
 const BOARDS_KEY = 'whiteboard.demo.boards';
 
@@ -18,6 +19,8 @@ interface StoredBoard {
   titleSearchable: string;
   content: string;
   inks: InkRun[];
+  /** Missing on boards saved before sketching. */
+  hasSketches?: boolean;
   createdAt: StoredAuditStamp;
   updatedAt: StoredAuditStamp;
 }
@@ -25,6 +28,7 @@ interface StoredBoard {
 /** Deletes every demo board in this storage, e.g. when someone new starts demo mode in the same browser. */
 export function clearDemoBoards(storage: Storage): void {
   storage.removeItem(BOARDS_KEY);
+  clearAllDemoStrokes(storage);
 }
 
 function toAuditStamp(stamp: StoredAuditStamp): AuditStamp {
@@ -35,6 +39,7 @@ function toBoard(stored: StoredBoard): Board {
   return {
     ...stored,
     inks: normalizeInks(stored.inks, stored.content.length),
+    hasSketches: stored.hasSketches ?? false,
     createdAt: toAuditStamp(stored.createdAt),
     updatedAt: toAuditStamp(stored.updatedAt),
   };
@@ -108,6 +113,7 @@ export class LocalStorageBoardRepository implements BoardRepository {
 
     board.content = changes.content;
     board.inks = normalizeInks(changes.inks, changes.content.length);
+    board.hasSketches = changes.hasSketches;
     board.updatedAt = this.stamp();
     this.write(boards);
   }
@@ -129,5 +135,6 @@ export class LocalStorageBoardRepository implements BoardRepository {
     this.find(boards, id);
 
     this.write(boards.filter((board) => board.id !== id));
+    clearDemoStrokes(this.storage, id);
   }
 }

@@ -1,9 +1,10 @@
-import type {Board, BoardWriting, NewBoardInput} from '@/types/board';
-import type {BoardRepository} from '@/repositories';
+import type {Board, BoardUpdateInput, NewBoardInput} from '@/types/board';
+import type {BoardRepository, SketchRepository} from '@/repositories';
+import type {Stroke} from '@/types/sketch';
 import type {SessionUser} from '@/types/session';
 
 import {defineStore} from 'pinia';
-import {createBoardRepository} from '@/repositories';
+import {createBoardRepository, createSketchRepository} from '@/repositories';
 import {toSearchable} from '@/utils/search';
 import {useAuthStore} from './auth';
 
@@ -29,6 +30,10 @@ function currentUser(): SessionUser {
 
 function currentRepository(): BoardRepository {
   return createBoardRepository(currentUser());
+}
+
+function currentSketchRepository(): SketchRepository {
+  return createSketchRepository(currentUser());
 }
 
 export const useBoardsStore = defineStore('boards', {
@@ -98,8 +103,23 @@ export const useBoardsStore = defineStore('boards', {
     },
 
     /** Saves what is written on a board. Errors propagate to the caller, which owns the save status. */
-    async saveBoardWriting(id: string, writing: BoardWriting): Promise<void> {
-      await currentRepository().update(id, writing);
+    async saveBoardWriting(id: string, changes: BoardUpdateInput): Promise<void> {
+      await currentRepository().update(id, changes);
+    },
+
+    /** A board's strokes, oldest first. Errors propagate to the caller. */
+    async getStrokes(boardId: string): Promise<Stroke[]> {
+      return currentSketchRepository().list(boardId);
+    },
+
+    /** Saves a new (or restored) stroke. Errors propagate to the caller, which owns the save status. */
+    async addStroke(boardId: string, stroke: Stroke): Promise<void> {
+      await currentSketchRepository().add(boardId, stroke);
+    },
+
+    /** Removes a stroke. Errors propagate to the caller, which owns the save status. */
+    async removeStroke(boardId: string, strokeId: string): Promise<void> {
+      await currentSketchRepository().remove(boardId, strokeId);
     },
   },
 });

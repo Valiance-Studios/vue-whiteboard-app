@@ -32,11 +32,22 @@
         >
           {{ board.title }}
         </router-link>
-        <span
-          class="text-body-2 text-medium-emphasis"
-          :title="updatedAtFull"
-        >
-          Updated {{ updatedAt }}
+        <span class="board-card__meta text-body-2 text-medium-emphasis">
+          <span :title="updatedAtFull">Updated {{ updatedAt }}</span>
+          <!-- Only an icon: the preview shows the writing, and loading every board's strokes would cost a read each. -->
+          <!-- Labelled on a wrapper, since v-icon is always aria-hidden. -->
+          <span
+            v-if="board.hasSketches"
+            class="board-card__sketched"
+            role="img"
+            aria-label="Has sketches"
+            title="Has sketches"
+          >
+            <v-icon
+              icon="mdi-draw"
+              size="small"
+            />
+          </span>
         </span>
       </div>
 
@@ -181,6 +192,16 @@ export default defineComponent({
     flex-direction: column;
     gap: 2px;
     min-width: 0;
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__sketched {
+    display: inline-flex;
   }
 
   &__title {

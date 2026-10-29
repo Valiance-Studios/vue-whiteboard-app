@@ -67,7 +67,7 @@
           />
           <span :class="saveStatus.textClass">{{ saveStatus.text }}</span>
           <v-btn
-            v-if="saveFailed"
+            v-if="saveFailed || strokeSaveFailed"
             variant="text"
             size="small"
             density="comfortable"
@@ -95,7 +95,9 @@
       <whiteboard-sheet
         :key="board.id"
         :writing="board"
+        :strokes="strokes"
         @change="onWritingChange"
+        @sketch="onSketch"
       />
     </template>
 
@@ -135,7 +137,9 @@
 </template>
 
 <script lang="ts">
+import type {SketchChange} from '@/sketch/SketchHistory';
 import type {Board, BoardWriting} from '@/types/board';
+import type {Stroke} from '@/types/sketch';
 import type {Debounced} from '@/utils/debounce';
 import type {RouteLocationRaw} from 'vue-router';
 
@@ -204,6 +208,16 @@ export default defineComponent({
       writing: emptyWriting(),
       /** The writing as last written to storage; anything else means there is work to save. */
       savedWriting: emptyWriting(),
+      /** Whether the board has strokes now, and as last saved on the board for the collection's sketch icon. */
+      hasSketches: false,
+      savedHasSketches: false,
+      /** The strokes as loaded, which the sheet starts from. */
+      strokes: [] as Stroke[],
+      /** Stroke changes not yet saved, oldest first. They are saved one at a time, in order. */
+      strokeQueue: [] as SketchChange[],
+      /** The stroke save in progress, if any. */
+      runningStrokeSave: null as Promise<void> | null,
+      strokeSaveFailed: false,
       /** The save in progress, which anything else writing the board waits for. */
       runningSave: null as Promise<void> | null,
       saveFailed: false,
@@ -230,7 +244,7 @@ export default defineComponent({
     },
 
     unsavedChanges(): boolean {
-      return !isSameWriting(this.writing, this.savedWriting);
+      return !isSameWriting(this.writing, this.savedWriting) || this.hasSketches !== this.savedHasSketches;
     },
 
     saveStatus(): SaveStatus | null {
@@ -238,7 +252,11 @@ export default defineComponent({
         return {text: 'Could not save your writing.', textClass: 'text-error', icon: 'mdi-alert-circle-outline', color: 'error'};
       }
 
-      if (this.unsavedChanges || this.saving) {
+      if (this.strokeSaveFailed) {
+        return {text: 'Could not save your sketch.', textClass: 'text-error', icon: 'mdi-alert-circle-outline', color: 'error'};
+      }
+
+      if (this.unsavedChanges || this.saving || this.strokeQueue.length > 0) {
         return {text: 'Saving…', textClass: 'text-medium-emphasis', icon: 'mdi-cloud-upload-outline', color: 'medium-emphasis'};
       }
 
@@ -281,9 +299,17 @@ export default defineComponent({
 
         // Ignore the response if the user has already navigated to another board.
         if (id === this.id) {
-          this.board = board;
-          this.writing = board ? {content: board.content, inks: board.inks} : emptyWriting();
-          this.savedWriting = this.writing;
+          // Strokes are only looked for on a board that exists and is the user's.
+          const strokes = board ? await this.boardsStore.getStrokes(id) : [];
+
+          if (id === this.id) {
+            this.board = board;
+            this.writing = board ? {content: board.content, inks: board.inks} : emptyWriting();
+            this.savedWriting = this.writing;
+            this.strokes = strokes;
+            this.hasSketches = board?.hasSketches ?? false;
+            this.savedHasSketches = this.hasSketches;
+          }
         }
       } catch (error) {
         console.error('Failed to load board', error);
@@ -309,6 +335,12 @@ export default defineComponent({
       this.savedWriting = this.writing;
       this.runningSave = null;
       this.saveFailed = false;
+      this.strokes = [];
+      this.strokeQueue = [];
+      this.runningStrokeSave = null;
+      this.strokeSaveFailed = false;
+      this.hasSketches = false;
+      this.savedHasSketches = false;
       this.editingTitle = false;
       this.deleteDialogOpen = false;
       this.edited = false;
@@ -354,8 +386,10 @@ export default defineComponent({
           }
 
           const writing = this.writing;
-          await this.boardsStore.saveBoardWriting(id, writing);
+          const hasSketches = this.hasSketches;
+          await this.boardsStore.saveBoardWriting(id, {...writing, hasSketches});
           this.savedWriting = writing;
+          this.savedHasSketches = hasSketches;
           this.lastSavedAt = Date.now();
         }
       } catch (error) {
@@ -376,10 +410,75 @@ export default defineComponent({
     /** Saves now instead of waiting for the typing pause, e.g. when leaving the board. */
     async flushSave(): Promise<void> {
       this.saveWritingLater?.cancel();
-      await this.save();
+      await Promise.all([this.save(), this.saveStrokes()]);
+    },
+
+    /** Saves strokes straight away, and the board's sketch flag with the next save of the writing. */
+    onSketch(changes: SketchChange[], strokeCount: number): void {
+      this.queueStrokeChanges(changes);
+      this.hasSketches = strokeCount > 0;
+      this.edited = true;
+      void this.saveStrokes();
+      this.saveWritingLater?.();
+    },
+
+    queueStrokeChanges(changes: SketchChange[]): void {
+      // While a save runs, the first change in the queue is the one being written.
+      const firstWaiting = this.runningStrokeSave ? 1 : 0;
+
+      for (const change of changes) {
+        // A stroke removed before its addition was saved, e.g. drawn and undone, need not be saved at all.
+        const waitingAdd = change.type === 'remove'
+          ? this.strokeQueue.findIndex((queued, index) => index >= firstWaiting && queued.type === 'add' && queued.stroke.id === change.stroke.id)
+          : -1;
+
+        if (waitingAdd === -1) {
+          this.strokeQueue.push(change);
+        } else {
+          this.strokeQueue.splice(waitingAdd, 1);
+        }
+      }
+    },
+
+    /** Saves queued stroke changes in order, one at a time. Joins the save already running, like `save`. */
+    saveStrokes(): Promise<void> {
+      if (!this.runningStrokeSave && this.strokeQueue.length > 0) {
+        const run: Promise<void> = this.writeStrokes().finally(() => {
+          if (this.runningStrokeSave === run) {
+            this.runningStrokeSave = null;
+          }
+        });
+        this.runningStrokeSave = run;
+      }
+
+      return this.runningStrokeSave ?? Promise.resolve();
+    },
+
+    async writeStrokes(): Promise<void> {
+      const id = this.id;
+      this.strokeSaveFailed = false;
+
+      try {
+        // A failed change stays first in the queue, so Retry picks up where saving stopped.
+        while (id === this.id && this.strokeQueue.length > 0) {
+          const change = this.strokeQueue[0];
+
+          if (change.type === 'add') {
+            await this.boardsStore.addStroke(id, change.stroke);
+          } else {
+            await this.boardsStore.removeStroke(id, change.stroke.id);
+          }
+
+          this.strokeQueue.shift();
+        }
+      } catch (error) {
+        console.error('Failed to save sketch', error);
+        this.strokeSaveFailed = true;
+      }
     },
 
     saveNow(): void {
+      this.strokeSaveFailed = false;
       void this.flushSave();
     },
 
@@ -435,10 +534,13 @@ export default defineComponent({
 
     async deleteBoard(): Promise<void> {
       const id = this.id;
-      // Nothing is left to save on a board being deleted; a save already running is let finish first.
+      // Nothing is left to save on a board being deleted; saves already running are let finish first.
+      // Its strokes are deleted along with it.
       this.saveWritingLater?.cancel();
       this.savedWriting = this.writing;
-      await this.runningSave;
+      this.savedHasSketches = this.hasSketches;
+      this.strokeQueue = [];
+      await Promise.all([this.runningSave, this.runningStrokeSave]);
 
       await this.boardsStore.deleteBoard(id);
       await this.$router.replace(this.boardCollectionRoute);

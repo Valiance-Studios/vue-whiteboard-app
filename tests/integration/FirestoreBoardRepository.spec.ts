@@ -120,7 +120,7 @@ describe('FirestoreBoardRepository', () => {
       const id = await repository.create({title: 'Sprint Plan'});
       const created = await existingBoard(repository, id);
 
-      await repository.update(id, {content: 'Ship the editor', inks: []});
+      await repository.update(id, {content: 'Ship the editor', inks: [], hasSketches: false});
       const updated = await existingBoard(repository, id);
 
       expect(updated).toMatchObject({
@@ -138,11 +138,21 @@ describe('FirestoreBoardRepository', () => {
       const repository = repositoryFor(OWNER);
       const id = await repository.create({title: 'Notes'});
 
-      await repository.update(id, {content: 'first', inks: []});
+      await repository.update(id, {content: 'first', inks: [], hasSketches: false});
       await waitForSaveInterval();
-      await repository.update(id, {content: 'second', inks: []});
+      await repository.update(id, {content: 'second', inks: [], hasSketches: false});
 
       await expect(repository.get(id)).resolves.toMatchObject({content: 'second'});
+    });
+
+    it('saves whether the board has sketches', async () => {
+      const repository = repositoryFor(OWNER);
+      const id = await repository.create({title: 'Sketched'});
+      await expect(repository.get(id)).resolves.toMatchObject({hasSketches: false});
+
+      await repository.update(id, {content: '', inks: [], hasSketches: true});
+
+      await expect(repository.get(id)).resolves.toMatchObject({hasSketches: true});
     });
 
     it('saves and reads back marker colors', async () => {
@@ -150,9 +160,9 @@ describe('FirestoreBoardRepository', () => {
       const id = await repository.create({title: 'Colors'});
       const inks = [{ink: 'blue' as const, length: 6}, {ink: 'red' as const, length: 5}];
 
-      await repository.update(id, {content: 'Hello world', inks});
+      await repository.update(id, {content: 'Hello world', inks, hasSketches: false});
 
-      await expect(repository.get(id)).resolves.toMatchObject({content: 'Hello world', inks});
+      await expect(repository.get(id)).resolves.toMatchObject({content: 'Hello world', inks, hasSketches: false});
     });
 
     it('reads a board saved without marker colors in the default ink', async () => {
@@ -162,18 +172,18 @@ describe('FirestoreBoardRepository', () => {
         await updateDoc(doc(context.firestore() as unknown as Firestore, 'boards', id), {content: 'Milk'});
       });
 
-      await expect(repository.get(id)).resolves.toMatchObject({content: 'Milk', inks: [{ink: 'blue', length: 4}]});
+      await expect(repository.get(id)).resolves.toMatchObject({content: 'Milk', inks: [{ink: 'blue', length: 4}], hasSketches: false});
     });
 
     it('rejects an update to another user\'s board', async () => {
       const id = await repositoryFor(OTHER).create({title: 'Bob Board'});
 
-      await expect(repositoryFor(OWNER).update(id, {content: 'mine now', inks: []})).rejects.toThrow();
+      await expect(repositoryFor(OWNER).update(id, {content: 'mine now', inks: [], hasSketches: false})).rejects.toThrow();
       await expect(repositoryFor(OTHER).get(id)).resolves.toMatchObject({content: ''});
     });
 
     it('rejects an update to a board that does not exist', async () => {
-      await expect(repositoryFor(OWNER).update('missing', {content: 'anything', inks: []})).rejects.toThrow();
+      await expect(repositoryFor(OWNER).update('missing', {content: 'anything', inks: [], hasSketches: false})).rejects.toThrow();
     });
   });
 
@@ -181,7 +191,7 @@ describe('FirestoreBoardRepository', () => {
     it('gives the board a trimmed title and searchable title, keeping its writing', async () => {
       const repository = repositoryFor(OWNER);
       const id = await repository.create({title: 'Old Name'});
-      await repository.update(id, {content: 'Keep me', inks: []});
+      await repository.update(id, {content: 'Keep me', inks: [], hasSketches: false});
       await waitForSaveInterval();
 
       await repository.rename(id, '  New Name  ');
