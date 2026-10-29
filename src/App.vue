@@ -18,40 +18,46 @@
         </router-link>
       </v-app-bar-title>
 
-      <template
-        v-if="authStore.user"
-        #append
-      >
-        <v-avatar
-          :image="authStore.user.photoURL ?? undefined"
-          color="primary"
-          variant="tonal"
-          size="32"
-          class="me-3"
-        >
-          <span
-            v-if="!authStore.user.photoURL"
-            class="text-subtitle-2 font-weight-bold"
-          >{{ userInitial }}</span>
-        </v-avatar>
-        <span class="text-body-2 me-3 d-none d-sm-inline">{{ userName }}</span>
-        <v-chip
-          v-if="authStore.isDemo"
-          size="small"
-          color="primary"
-          variant="tonal"
-          class="me-2"
-          title="Demo Mode: boards are saved in this browser only"
-        >
-          Demo
-        </v-chip>
-        <v-btn
-          variant="text"
-          prepend-icon="mdi-logout"
-          @click="onSignOut"
-        >
-          Sign out
-        </v-btn>
+      <!-- The theme toggle is always at the right edge; once signed in, the account controls follow it. -->
+      <template #append>
+        <theme-toggle :class="{'me-2': authStore.user}" />
+
+        <template v-if="authStore.user">
+          <v-avatar
+            :image="authStore.user.photoURL ?? undefined"
+            color="primary"
+            variant="tonal"
+            size="32"
+            class="me-3"
+          >
+            <span
+              v-if="!authStore.user.photoURL"
+              class="text-subtitle-2 font-weight-bold"
+            >{{ userInitial }}</span>
+          </v-avatar>
+          <span class="text-body-2 me-3 d-none d-sm-inline">{{ userName }}</span>
+          <v-chip
+            v-if="authStore.isDemo"
+            size="small"
+            color="primary"
+            variant="tonal"
+            class="me-2"
+            title="Demo Mode: boards are saved in this browser only"
+          >
+            Demo
+          </v-chip>
+          <!-- Icon-only on phones, where the title would otherwise be squeezed out. -->
+          <v-btn
+            variant="text"
+            prepend-icon="mdi-logout"
+            aria-label="Sign out"
+            title="Sign out"
+            class="app-sign-out"
+            @click="onSignOut"
+          >
+            <span class="d-none d-sm-inline">Sign out</span>
+          </v-btn>
+        </template>
       </template>
     </v-app-bar>
 
@@ -64,12 +70,17 @@
 <script lang="ts">
 import {defineComponent} from 'vue';
 import {mapStores} from 'pinia';
+import ThemeToggle from '@/components/ThemeToggle.vue';
 import {useAuthStore} from '@/stores/auth';
 import {useBoardsStore} from '@/stores/boards';
 import {RouteName} from '@/router';
 
 export default defineComponent({
   name: 'App',
+
+  components: {
+    ThemeToggle,
+  },
 
   data() {
     return {
@@ -103,6 +114,13 @@ export default defineComponent({
 </script>
 
 <style lang="scss" scoped>
+// With its text hidden on phones, the button keeps only the icon, so drop the gap left for the text.
+@media (max-width: 599.98px) {
+  .app-sign-out :deep(.v-btn__prepend) {
+    margin-inline: 0;
+  }
+}
+
 .app-title {
   display: inline-flex;
   align-items: center;

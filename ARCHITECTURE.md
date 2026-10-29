@@ -49,7 +49,7 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - Note that a Firestore write made while offline stays pending rather than failing, so the status reads "Saving…" until the connection returns; the error state is for rejected writes, such as a board that was deleted.
    - Do not worry about supporting free writing/drawing with the mouse or a touch screen for now.
 
-All signed-in pages share a white app bar with the marker logo, the user's Google photo (or initial) and name, a "Demo" chip in demo mode, and Sign out.
+Every page shares an app bar with the marker logo on the left and the theme toggle on the right. Once signed in, the toggle is followed by the user's Google photo (or initial) and name, a "Demo" chip in demo mode, and Sign out. On phones the name is hidden and Sign out shows only its icon (keeping "Sign out" as its accessible name), so the title is not squeezed out.
 
 `/` redirects to `/boards`. Routes requiring a session are flagged with `meta.requiresAuth`.
 
@@ -149,7 +149,9 @@ Firebase Hosting, deployed manually, to the dev project `vs-valiance-studios-dev
 
 ## Styling
 
-- The Vuetify theme `whiteboard` (`src/plugins/vuetify.ts`) sets marker blue `#1f3b73` as `primary` on a light cool-grey background.
+- Two Vuetify themes, `light` and `dark` (`src/plugins/vuetify.ts`). Light sets marker blue `#1f3b73` as `primary` on a cool-grey background; dark lightens it to `#9bb7ee` (with dark text on it) on near-black surfaces.
+- **Theme toggle** (`ThemeToggle`): a sun/moon button at the right edge of the app bar. On the login page it is the only control there; once signed in it sits just left of the avatar. Until the visitor picks a theme the app follows the system setting (`defaultTheme: 'system'`, which tracks changes live); a pick is saved to `localStorage` (`whiteboard.theme`, `src/theme/themePreference.ts`) and wins over the system from then on. The saved theme is read when Vuetify is created, before the first render, so it never flashes the other theme.
+- **The boards stay white in the dark theme**: they are whiteboards, and the marker inks are chosen for white. So anything drawn on a board (e.g. the card's "Empty board") sets its own color rather than inheriting the theme's text color, which is light in the dark theme.
 - Vuetify's theme variables are comma-separated channels (`--v-theme-primary: 31,59,115`), so a translucent theme color is `rgba(var(--v-theme-primary), 0.08)`. The slash form, `rgb(var(--v-theme-primary) / 8%)`, mixes the two syntaxes; browsers drop it silently and the color never shows.
 - The dry-erase look (marker font stack, aluminium frame and glossy surface) lives in `src/styles/_board.scss`. Marker colors live in code (`src/constants/markers.ts`), because the editor and the previews need them there. Components pull it in with `@use '@/styles/board';` (the `@/` alias works in Sass too), so the board view and the collection's previews cannot drift apart.
 
@@ -183,6 +185,7 @@ Last updated 2026-10-28.
 - Marker tray and multi-color writing on the Single Board View (a Tiptap editor), with colors stored as `inks` runs and shown in the collection previews.
 - Demo Mode: a name-only session from the login page, with boards kept in `localStorage`; returning visitors go straight in.
 - Renaming and deleting boards, from the board cards and from the board page.
+- Light and dark themes, with a toggle in the app bar; follows the system setting until one is picked.
 
 **Next**
 - First manual deploy (`npm run deploy`) once `.env.production.local` exists and the allowlist has an entry for you, then a sign-in smoke test on the hosted URL.
