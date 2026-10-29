@@ -51,10 +51,23 @@ async function request(url: string, init: RequestInit, action: string): Promise<
   return response.json();
 }
 
+/** A document's fields as the Firestore REST API returns them, e.g. `{email: {stringValue: 'a@b.c'}}`. */
+export type DocumentFields = Record<string, Record<string, unknown>>;
+
+function documentsUrl(path: string): string {
+  return `http://127.0.0.1:${ports.firestore}/v1/projects/${projectId}/databases/${databaseId}/documents/${path}`;
+}
+
+/** The fields of every document in a top-level collection, read as an admin. */
+export async function listDocuments(collectionId: string): Promise<DocumentFields[]> {
+  const body = await request(documentsUrl(collectionId), {headers: ADMIN_HEADERS}, `list ${collectionId}`) as {documents?: Array<{fields?: DocumentFields}>};
+
+  return (body.documents ?? []).map((document) => document.fields ?? {});
+}
+
 /** Adds the email to the allowlist the security rules check. Safe to repeat. */
 export async function allowEmail(email: string): Promise<void> {
-  const documentPath = `allowedUsers/${encodeURIComponent(email.toLowerCase())}`;
-  const url = `http://127.0.0.1:${ports.firestore}/v1/projects/${projectId}/databases/${databaseId}/documents/${documentPath}`;
+  const url = documentsUrl(`allowedUsers/${encodeURIComponent(email.toLowerCase())}`);
 
   await request(url, {method: 'PATCH', headers: ADMIN_HEADERS, body: JSON.stringify({fields: {}})}, `allow ${email}`);
 }

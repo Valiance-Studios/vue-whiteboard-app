@@ -5,7 +5,7 @@ import {defineStore} from 'pinia';
 import {DemoProfileStorage} from '@/demo/DemoProfileStorage';
 import {auth} from '@/firebase';
 import {clearDemoBoards} from '@/repositories/LocalStorageBoardRepository';
-import {hasFirestoreAccess} from '@/firebase/access';
+import {hasFirestoreAccess, recordAccessRequest} from '@/firebase/access';
 import {FirebaseError} from 'firebase/app';
 import {GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut as signOutFirebase} from 'firebase/auth';
 
@@ -13,6 +13,8 @@ interface AuthState {
   user: SessionUser | null;
   /** The last account that signed in without access, so the login page can say why it did not work. */
   deniedUser: SessionUser | null;
+  /** Whether the denied sign-in was recorded for the owner to review. */
+  accessRequested: boolean;
 }
 
 /** Error codes meaning the user dismissed sign-in rather than it failing. */
@@ -47,20 +49,45 @@ let initPromise: Promise<void> | null = null;
  * The access check for the current Firebase user. A sign-in reports the user both to
  * `signInWithGoogle` and to the auth state listener, so the check is shared rather than read twice.
  */
-let accessCheck: {uid: string; allowed: Promise<boolean>} | null = null;
+let accessCheck: {uid: string; result: Promise<AccessCheckResult>} | null = null;
 
-function checkAccess(user: User): Promise<boolean> {
-  if (accessCheck?.uid !== user.uid) {
-    accessCheck = {uid: user.uid, allowed: hasFirestoreAccess(user)};
+interface AccessCheckResult {
+  allowed: boolean;
+  /** Whether a denied sign-in was recorded for the owner to review. */
+  requestRecorded: boolean;
+}
+
+/** Checks the allowlist, recording a denied sign-in. Recording is best-effort: its failure never fails the check. */
+async function runAccessCheck(user: User): Promise<AccessCheckResult> {
+  if (await hasFirestoreAccess(user)) {
+    return {allowed: true, requestRecorded: false};
   }
 
-  return accessCheck.allowed;
+  try {
+    await recordAccessRequest(user);
+
+    return {allowed: false, requestRecorded: true};
+  } catch (error) {
+    console.warn('Could not record the access request', error);
+
+    return {allowed: false, requestRecorded: false};
+  }
+}
+
+/** Shared between the sign-in and the auth state listener, so the allowlist is read and a denial recorded only once. */
+function checkAccess(user: User): Promise<AccessCheckResult> {
+  if (accessCheck?.uid !== user.uid) {
+    accessCheck = {uid: user.uid, result: runAccessCheck(user)};
+  }
+
+  return accessCheck.result;
 }
 
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     user: null,
     deniedUser: null,
+    accessRequested: false,
   }),
 
   getters: {
@@ -181,8 +208,11 @@ export const useAuthStore = defineStore('auth', {
         return false;
       }
 
-      if (!(await checkAccess(user))) {
+      const {allowed, requestRecorded} = await checkAccess(user);
+
+      if (!allowed) {
         this.deniedUser = toSessionUser(user);
+        this.accessRequested = requestRecorded;
         await this.signOut();
 
         return false;

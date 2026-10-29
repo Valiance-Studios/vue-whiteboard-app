@@ -22,7 +22,7 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - Google sign-in via Firebase Authentication.
    - Unauthenticated users are redirected here by a global route guard; after sign-in they return to the route they originally requested.
    - A **Demo Mode** button below Google sign-in starts demo mode (see "Demo Mode").
-   - Only allowlisted accounts get a session (see "Access Rules"). Anyone else is signed straight back out, on sign-in and on page load alike, and the page says which account has no access.
+   - Only allowlisted accounts get a session (see "Access Rules"). Anyone else is signed straight back out, on sign-in and on page load alike, and the page says which account has no access. The denied sign-in is recorded in `accessRequests` for the owner (see below), and the page adds "Your request has been recorded for the app's owner." when that write succeeded.
 1. **Board Collection View (`/boards`)**
    - Displays a searchable grid of the boards the signed-in user has created (other users' boards are never listed).
    - Each card previews the board as a small framed whiteboard in the marker font and the writing's own marker colors (the first 400 characters are rendered), with the title and last update below. The header has the heading with a board count beside it ("6 boards", or "2 of 6 boards" while searching) on the left, and the search field on the right.
@@ -68,7 +68,13 @@ Boards live in the **named** Firestore database `vue-whiteboard-app`, not the pr
 
 Where `AuditStamp` is `{ uid: string; time: Timestamp }` - who made the change and when.
 
-### `allowedUsers` collection
+### `accessRequests` collection
+
+Denied sign-ins, so the owner can see who is waiting for access without comparing the Authentication users list with the allowlist. One document per account, keyed by uid: `{ email, displayName, requestedAt }`, overwritten with each attempt (Authentication > Users still shows when the account first appeared). Review it in the Firebase console; to grant access, add the email to `allowedUsers` as usual, and delete the request if you like.
+
+- Written by the app (`recordAccessRequest` in `src/firebase/access.ts`) when the access check fails, before signing the user out. It is part of the shared access check, so a sign-in reported by both the popup and the auth listener records once.
+- **Best-effort**: a failed write (e.g. a retry within the minute the rules require) is logged to the console and never stops the denial. Because the client records it, someone bypassing the app is not recorded: it is a convenience list, not an audit log.
+
 
 The accounts allowed to use Firestore. Each document's id is a **lowercase** email address; the document has no fields. It is managed by hand in the Firebase console (no client can write to it), and `hasFirestoreAccess` in `src/firebase/access.ts` reads the signed-in user's own entry.
 
@@ -81,6 +87,7 @@ The application/domain layer uses a storage-agnostic `Board` type (with `Date` i
 Signing in with Google is open to anyone, so the rules, not the client, are what stop strangers from writing to Firestore. Client-side checks (the access check, the save debounce and spacing, the textarea's max length) only make the app behave well for honest users; anyone signed in can call the Firestore SDK directly with their own token.
 
 - Every board operation requires an **allowlisted, verified email**: `request.auth.token.email_verified` is true and `allowedUsers/<lowercase email>` exists. Removing an entry locks the user out immediately, whereas disabling their Auth account leaves their token valid for up to an hour.
+- `accessRequests/{uid}` may only be written by that signed-in user, with exactly `email` (equal to the token's email), `displayName` (string of at most 200 characters, or null) and `requestedAt` (the server's time), and updated at most once a minute. Clients cannot read, list or delete requests; only the console can.
 - Users may `get` only their own `allowedUsers` entry, so the client can tell whether it has access (a missing entry reads as "no access", not an error). Listing and writing the allowlist are denied.
 - `content` is capped at 100,000 characters (`BOARD_CONTENT_MAX_LENGTH`), so no write can approach Firestore's 1 MiB document limit.
 - `inks`, when present, must be well-formed runs of the six known inks and at most 20,000 characters long (`BOARD_INKS_MAX_LENGTH`, about 2,000 color changes). Rules cannot check that the runs add up to the length of `content`; the client tolerates a mismatch.
@@ -197,7 +204,7 @@ Last updated 2026-10-28.
 - Single Board View editing: dry-erase styled `v-sheet`, debounced auto-save through `BoardRepository.update`, save status, and a flush when leaving the board.
 - `npm run emulators:stop` to clear emulator ports left in use.
 - Firebase Hosting deployment to the dev project, with the app pointed at the named `vue-whiteboard-app` database.
-- Firestore safeguards: an email allowlist for all board access (with a "no access" message on the login page), a board content size cap, and a minimum gap between writes to one board. `npm run emulators` seeds an allowlisted Dev User for local work.
+- Firestore safeguards: an email allowlist for all board access (with a "no access" message on the login page), a board content size cap, and a minimum gap between writes to one board. `npm run emulators` seeds an allowlisted Dev User for local work. Denied sign-ins are recorded in `accessRequests`.
 - Visual refresh of the app bar and Board Collection View: a custom Vuetify theme, whiteboard-style board cards, and a board count.
 - Marker tray and multi-color writing on the Single Board View (a Tiptap editor), with colors stored as `inks` runs and shown in the collection previews.
 - Demo Mode: a name-only session from the login page, with boards kept in `localStorage`; returning visitors go straight in.
