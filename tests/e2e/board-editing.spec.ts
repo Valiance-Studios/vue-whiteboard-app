@@ -109,4 +109,26 @@ test.describe('board editing', () => {
     await expect(preview).toHaveText(['Plain ', 'fancy']);
     await expect(preview.nth(1)).toHaveCSS('color', 'rgb(91, 42, 134)');
   });
+
+  test('wraps writing at the same places whatever the window width', async ({page}) => {
+    await createBoard(page, 'Wrapping');
+    await writeOnBoard(page, 'A long line of writing that is sure to wrap onto a second line on any board, whatever the width of the window it is shown in');
+    await expect(saveStatus(page)).toContainText('All changes saved');
+    const firstLine = boardLines(page).first();
+
+    // `offsetHeight` is the laid-out height, before the board is scaled to fit the window.
+    const heightAt = async (width: number): Promise<number> => {
+      await page.setViewportSize({width, height: 900});
+      // Wait for the board to rescale to the new width before measuring.
+      await expect.poll(() => page.locator('.whiteboard-sheet__surface').evaluate((surface) => surface.getBoundingClientRect().width)).toBeLessThan(width);
+
+      return firstLine.evaluate((line) => (line as HTMLElement).offsetHeight);
+    };
+
+    const wide = await heightAt(1400);
+    const narrow = await heightAt(700);
+
+    expect(wide).toBeGreaterThan(40);
+    expect(narrow).toBe(wide);
+  });
 });

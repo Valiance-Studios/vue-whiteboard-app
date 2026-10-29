@@ -1,8 +1,9 @@
 // The dry-erase look shared by the board view and the board previews in the collection.
 // Marker colors live in `src/constants/markers.ts`, since the editor and the previews need them in code.
 
-// A felt-tip stack that is already on macOS and Windows, so the board needs no web font.
-$marker-font: 'Marker Felt', 'Segoe Print', 'Ink Free', 'Bradley Hand', 'Comic Sans MS', cursive;
+// Bundled (`@fontsource/caveat-brush`, imported in main.ts) rather than a system font, so a board's text is
+// the same shape, and wraps at the same places, on every device.
+$marker-font: 'Caveat Brush', cursive;
 $frame-color: #b7c0cc;
 
 // A glossy white surface in an aluminium frame of the given width.

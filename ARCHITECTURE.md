@@ -6,6 +6,7 @@
 - Vuetify 4 (UI component library)
 - Vue Router 5 (Multi-view navigation)
 - Tiptap 3 (the board's rich-text editor, used only for marker colors)
+- Caveat Brush (`@fontsource/caveat-brush`, SIL Open Font License), the bundled marker font
 - Pinia 4 (State management, using Options-style stores)
 - Firebase Authentication (Google sign-in)
 - Firebase Firestore (Cloud database)
@@ -39,7 +40,8 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - **Renaming**: clicking the title (a button inside the `h1`, with a pencil that appears on hover) turns it into a text field at the heading's size. Enter or leaving the field saves; Escape cancels; an unchanged title just closes it. A blank or too-long title, or a failed save, keeps the field open with the message under it. A rename is a write like any save, so it first waits for pending writing (`flushSave`) and the rules' 500 ms gap after the last write.
    - **Deleting**: a trash button across from the title, after a confirmation. It drops any unsaved writing, lets a save already running finish, deletes the board and returns to the collection.
    - `save()` returns the save in progress (`runningSave`) instead of returning at once when one is running, so renaming, deleting and leaving the board can all wait for it.
-   - `WhiteboardSheet` is styled to resemble a physical dry-erase board (aluminium frame, glossy sheen) with a marker font. The font stack uses faces already installed on macOS and Windows, so the board needs no web font.
+   - `WhiteboardSheet` is styled to resemble a physical dry-erase board (aluminium frame, glossy sheen), written in the bundled Caveat Brush marker font.
+   - **Fixed layout**: the writing surface is laid out at a fixed width, `BOARD_SURFACE_WIDTH` (960 px), and scaled with a CSS transform to fit the frame; a `ResizeObserver` keeps the scale in step with the frame's width and the frame's height in step with the writing. With one font everywhere and sizes in px (not rem, which follows the browser's font size setting), text wraps at the same places on every screen and device, so sketches drawn over the writing stay on the words they mark. The cost is on phones: the board shows the same line length as on a desktop, so the writing is small (about 8 px at 390 px wide) and is read and edited by pinch-zooming.
    - **Marker tray** (`MarkerTray`): an aluminium ledge under the board holding six markers (black, blue, red, green, purple, orange; `src/constants/markers.ts`). The marker in hand is lifted and named ("Marker · Red"). Picking one recolors the selected text, if any, and colors everything written from then on, so a board can mix colors. Each visit starts with blue.
    - **Editor**: a Tiptap editor limited to plain lines of colored text (`src/editor/`: document, paragraph, text, the `Ink` mark, undo/redo, placeholder, `ContentLimit`). There is no bold, headings or lists. Tiptap's document format stays inside `WhiteboardSheet` and `src/editor/`: the sheet takes and emits a `BoardWriting` (`content` plus ink runs), so the rest of the app never sees it.
    - The `Ink` mark's plugin keeps the current ink in ProseMirror's stored marks after every change, so typing anywhere, even inside text of another color, writes in the marker in hand. Pasted and dropped text is recolored to it. Text a change brings in with no ink at all (ProseMirror reads some typing back from the DOM, e.g. typing over a select-all, which skips stored marks) gets it as well, so no text is ever uncolored. Undo restores the earlier colors.
@@ -177,7 +179,7 @@ App Check (reCAPTCHA Enterprise) attests that requests come from this web app, s
 - **Tab icon** (`public/favicon.svg`, linked from `index.html`): the same `mdi-marker` icon as the app bar, copied as an SVG path from `@mdi/svg` 7.4.47 to match the installed `@mdi/font`. It follows the system color scheme, not the in-app toggle (a favicon cannot see the page's theme): marker blue normally, the dark theme's lighter blue when the system is dark, so it stays visible on dark tab bars. PNG fallbacks cover browsers that skip SVG tab icons (Safari): `favicon-32.png` (linked with `sizes="32x32"`, so SVG-capable browsers still prefer the SVG) and `apple-touch-icon.png` (180 px, for Safari and iOS bookmarks and home screens). A PNG cannot follow the color scheme, so both draw the marker on a white tile. They are generated from the SVG by `npm run icons` (`scripts/generate-icons.ts`, rendering with Playwright's Chromium); rerun it and commit the PNGs whenever the SVG changes.
 - **The boards stay white in the dark theme**: they are whiteboards, and the marker inks are chosen for white. So anything drawn on a board (e.g. the card's "Empty board") sets its own color rather than inheriting the theme's text color, which is light in the dark theme.
 - Vuetify's theme variables are comma-separated channels (`--v-theme-primary: 31,59,115`), so a translucent theme color is `rgba(var(--v-theme-primary), 0.08)`. The slash form, `rgb(var(--v-theme-primary) / 8%)`, mixes the two syntaxes; browsers drop it silently and the color never shows.
-- The dry-erase look (marker font stack, aluminium frame and glossy surface) lives in `src/styles/_board.scss`. Marker colors live in code (`src/constants/markers.ts`), because the editor and the previews need them there. Components pull it in with `@use '@/styles/board';` (the `@/` alias works in Sass too), so the board view and the collection's previews cannot drift apart.
+- The dry-erase look (marker font, aluminium frame and glossy surface) lives in `src/styles/_board.scss`. The font is bundled (imported in `main.ts`) rather than a system font: Marker Felt on macOS and Segoe Print on Windows have different metrics, so the same text wrapped differently. Browsers download only the WOFF2 subsets the page uses (about 67 kB for Latin). Marker colors live in code (`src/constants/markers.ts`), because the editor and the previews need them there. Components pull it in with `@use '@/styles/board';` (the `@/` alias works in Sass too), so the board view and the collection's previews cannot drift apart.
 
 ## Linting
 
@@ -210,11 +212,15 @@ Last updated 2026-10-28.
 - Demo Mode: a name-only session from the login page, with boards kept in `localStorage`; returning visitors go straight in.
 - Renaming and deleting boards, from the board cards and from the board page.
 - Light and dark themes, with a toggle in the app bar; follows the system setting until one is picked.
+- The marker icon as the tab icon, with PNG fallbacks.
+- App Check (reCAPTCHA Enterprise) in the client; the key is registered on the dev project and requests show as verified.
+- A fixed-width board layout with a bundled marker font, so writing wraps identically everywhere (groundwork for sketch annotations).
 
 **Next**
-- First manual deploy (`npm run deploy`) once `.env.production.local` exists and the allowlist has an entry for you, then a sign-in smoke test on the hosted URL.
-- App Check console setup and rollout on the dev project (see "App Check": create the key, register the app, deploy, monitor, then enforce for Firestore).
+- Sketch mode: a Text/Sketch toggle on the marker tray; pen strokes in the marker colors over the writing, saved one document per stroke in a `strokes` subcollection; a whole-stroke eraser; undo/redo arrows for sketches; an icon on cards of boards with sketches.
+- Enforce App Check for Cloud Firestore once the dashboard shows nearly all traffic verified, then consider Authentication.
 - A budget alert on the project's billing account.
+- Update the dependencies `npm audit` flags (in Firebase's gRPC, OpenTelemetry and uuid dependencies; fixes are available).
 
 **Later**
 - Real Firebase project config, once created (`.env.local`, from `.env.example`).

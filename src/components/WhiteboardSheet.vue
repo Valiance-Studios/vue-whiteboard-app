@@ -4,10 +4,23 @@
     :style="{'--marker-color': inkColor}"
   >
     <div class="whiteboard-sheet__board">
-      <editor-content
-        v-if="editor"
-        :editor="editor"
-      />
+      <!-- The surface is laid out at a fixed width and scaled to fit; the viewport takes its scaled height. -->
+      <div
+        ref="viewport"
+        class="whiteboard-sheet__viewport"
+        :style="{height: `${surfaceHeight * scale}px`}"
+      >
+        <div
+          ref="surface"
+          class="whiteboard-sheet__surface"
+          :style="surfaceStyle"
+        >
+          <editor-content
+            v-if="editor"
+            :editor="editor"
+          />
+        </div>
+      </div>
     </div>
 
     <marker-tray
@@ -20,11 +33,12 @@
 <script lang="ts">
 import type {MarkerInk} from '@/constants/markers';
 import type {BoardWriting} from '@/types/board';
-import type {PropType, Raw} from 'vue';
+import type {CSSProperties, PropType, Raw} from 'vue';
 
 import {defineComponent, markRaw} from 'vue';
 import {Editor, EditorContent} from '@tiptap/vue-3';
 import MarkerTray from '@/components/MarkerTray.vue';
+import {BOARD_SURFACE_WIDTH} from '@/constants/board';
 import {DEFAULT_INK, markerColor} from '@/constants/markers';
 import {boardExtensions, fromEditorDoc, toEditorContent} from '@/editor';
 
@@ -56,12 +70,21 @@ export default defineComponent({
       // Set with `markRaw`, so Vue does not wrap the editor and its ProseMirror state in reactive proxies.
       editor: null as Raw<Editor> | null,
       ink: DEFAULT_INK as MarkerInk,
+      /** How much the fixed-width surface is scaled to fit the frame. */
+      scale: 1,
+      /** The surface's unscaled height, which grows with the writing. */
+      surfaceHeight: 0,
+      resizeObserver: null as Raw<ResizeObserver> | null,
     };
   },
 
   computed: {
     inkColor(): string {
       return markerColor(this.ink);
+    },
+
+    surfaceStyle(): CSSProperties {
+      return {width: `${BOARD_SURFACE_WIDTH}px`, transform: `scale(${this.scale})`};
     },
   },
 
@@ -81,13 +104,34 @@ export default defineComponent({
         this.$emit('change', fromEditorDoc(editor.state.doc));
       },
     }));
+
+    // The frame's width sets the scale, and the writing's height sets the frame's height.
+    this.resizeObserver = markRaw(new ResizeObserver(() => {
+      this.measure();
+    }));
+    this.resizeObserver.observe(this.$refs.viewport as HTMLElement);
+    this.resizeObserver.observe(this.$refs.surface as HTMLElement);
+    this.measure();
   },
 
   beforeUnmount(): void {
+    this.resizeObserver?.disconnect();
     this.editor?.destroy();
   },
 
   methods: {
+    /** Fits the surface to the frame's width, and the frame to the surface's scaled height. */
+    measure(): void {
+      const viewport = this.$refs.viewport as HTMLElement | undefined;
+      const surface = this.$refs.surface as HTMLElement | undefined;
+
+      if (viewport && surface) {
+        this.scale = viewport.clientWidth / BOARD_SURFACE_WIDTH;
+        // `offsetHeight` is the laid-out height, before the scale transform.
+        this.surfaceHeight = surface.offsetHeight;
+      }
+    },
+
     pickMarker(ink: MarkerInk): void {
       this.ink = ink;
       this.editor?.chain().focus().setInk(ink).run();
@@ -110,7 +154,6 @@ export default defineComponent({
     border-bottom-width: 0;
     border-radius: 12px 12px 0 0;
     position: relative;
-    padding: 16px 28px 28px;
 
     // The sheen left on a board that has been wiped clean.
     &::before {
@@ -122,13 +165,24 @@ export default defineComponent({
     }
   }
 
-  // Positioned so the writing sits above the sheen.
-  :deep(.ProseMirror) {
+  &__viewport {
+    // Positioned so the writing sits above the sheen.
     position: relative;
-    min-height: 40rem;
+    overflow: hidden;
+  }
+
+  // Everything inside is in surface pixels: sizes are px, not rem, because a rem follows the user's
+  // browser font size and would change where lines wrap from one person to the next.
+  &__surface {
+    padding: 16px 28px 28px;
+    transform-origin: top left;
+  }
+
+  :deep(.ProseMirror) {
+    min-height: 640px;
     font-family: board.$marker-font;
-    font-size: 1.5rem;
-    line-height: 2.5rem;
+    font-size: 24px;
+    line-height: 40px;
     color: var(--marker-color);
     caret-color: var(--marker-color);
     outline: none;
