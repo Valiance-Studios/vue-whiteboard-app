@@ -28,13 +28,13 @@ describe('sessionGuard', () => {
   });
 
   it('allows authenticated users onto protected routes', async () => {
-    authStore.user = {uid: 'u1', displayName: 'Test', email: null, photoURL: null};
+    authStore.user = {uid: 'u1', kind: 'google', displayName: 'Test', email: null, photoURL: null};
 
     expect(await sessionGuard(routeTo('/boards', {requiresAuth: true}))).toBe(true);
   });
 
   it('sends authenticated users away from guest-only routes', async () => {
-    authStore.user = {uid: 'u1', displayName: 'Test', email: null, photoURL: null};
+    authStore.user = {uid: 'u1', kind: 'google', displayName: 'Test', email: null, photoURL: null};
 
     expect(await sessionGuard(routeTo('/login', {guestOnly: true}))).toEqual({name: RouteName.BoardCollection});
   });

@@ -10,7 +10,7 @@ import {useBoardsStore} from '@/stores/boards';
 vi.mock('@/firebase', () => ({auth: {}, db: {}}));
 vi.mock('@/repositories', () => ({createBoardRepository: vi.fn()}));
 
-const SESSION_USER = {uid: 'u1', displayName: 'Test', email: null, photoURL: null};
+const SESSION_USER = {uid: 'u1', kind: 'google' as const, displayName: 'Test', email: null, photoURL: null};
 
 function makeBoard(id: string, title: string): Board {
   const stamp = {uid: 'u1', time: new Date('2026-01-01T00:00:00Z')};

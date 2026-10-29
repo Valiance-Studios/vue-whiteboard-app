@@ -2,7 +2,9 @@ import type {SessionUser} from '@/types/session';
 import type {User} from 'firebase/auth';
 
 import {defineStore} from 'pinia';
+import {DemoProfileStorage} from '@/demo/DemoProfileStorage';
 import {auth} from '@/firebase';
+import {clearDemoBoards} from '@/repositories/LocalStorageBoardRepository';
 import {hasFirestoreAccess} from '@/firebase/access';
 import {FirebaseError} from 'firebase/app';
 import {GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut as signOutFirebase} from 'firebase/auth';
@@ -20,13 +22,23 @@ function isCancelledSignIn(error: unknown): boolean {
   return error instanceof FirebaseError && CANCELLED_SIGN_IN_CODES.has(error.code);
 }
 
+/** Demo boards belong to whoever uses this browser, so every demo session shares one uid. */
+const DEMO_UID = 'demo';
+
+const demoProfiles = new DemoProfileStorage(localStorage);
+
 function toSessionUser(user: User): SessionUser {
   return {
     uid: user.uid,
+    kind: 'google',
     displayName: user.displayName,
     email: user.email,
     photoURL: user.photoURL,
   };
+}
+
+function toDemoSession(displayName: string): SessionUser {
+  return {uid: DEMO_UID, kind: 'demo', displayName, email: null, photoURL: null};
 }
 
 let initPromise: Promise<void> | null = null;
@@ -53,12 +65,24 @@ export const useAuthStore = defineStore('auth', {
 
   getters: {
     isAuthenticated: (state): boolean => state.user !== null,
+
+    /** Whether the session is demo mode, whose boards live in this browser only. */
+    isDemo: (state): boolean => state.user?.kind === 'demo',
   },
 
   actions: {
-    /** Subscribes to auth state once; resolves after Firebase reports the initial state. Safe to call repeatedly. */
+    /**
+     * Resumes a demo session left active, then subscribes to auth state once; resolves after Firebase
+     * reports the initial state. Safe to call repeatedly.
+     */
     init(): Promise<void> {
       initPromise ??= new Promise<void>((resolve) => {
+        const profile = demoProfiles.load();
+
+        if (profile?.active) {
+          this.user = toDemoSession(profile.displayName);
+        }
+
         onAuthStateChanged(auth, (user) => {
           this.startSession(user)
             .catch((error: unknown) => {
@@ -95,8 +119,52 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    /**
+     * Starts demo mode as `displayName`, or under the name saved by an earlier visit if none is given.
+     * Returns `false` without starting when there is neither, so the caller can ask for a name.
+     */
+    enterDemo(displayName?: string): boolean {
+      const name = displayName?.trim() || demoProfiles.load()?.displayName;
+
+      if (!name) {
+        return false;
+      }
+
+      demoProfiles.save({displayName: name, active: true});
+      this.deniedUser = null;
+      this.user = toDemoSession(name);
+
+      return true;
+    },
+
+    /** The name a returning demo visitor will be greeted with, or `null` on a first visit. */
+    savedDemoName(): string | null {
+      return demoProfiles.load()?.displayName ?? null;
+    },
+
+    /** Starts demo mode for someone new in this browser, deleting the previous visitor's demo boards. */
+    enterDemoAsSomeoneNew(displayName: string): boolean {
+      if (!displayName.trim()) {
+        return false;
+      }
+
+      clearDemoBoards(localStorage);
+
+      return this.enterDemo(displayName);
+    },
+
+    /** Ends the session. Leaving demo mode keeps its name and boards for the next visit. */
     async signOut(): Promise<void> {
-      await signOutFirebase(auth);
+      if (this.user?.kind === 'demo') {
+        const profile = demoProfiles.load();
+
+        if (profile) {
+          demoProfiles.save({...profile, active: false});
+        }
+      } else {
+        await signOutFirebase(auth);
+      }
+
       this.user = null;
     },
 
@@ -104,7 +172,11 @@ export const useAuthStore = defineStore('auth', {
     async startSession(user: User | null): Promise<boolean> {
       if (user === null) {
         accessCheck = null;
-        this.user = null;
+
+        // No Firebase user is the normal state in demo mode, so it does not end a demo session.
+        if (this.user?.kind !== 'demo') {
+          this.user = null;
+        }
 
         return false;
       }

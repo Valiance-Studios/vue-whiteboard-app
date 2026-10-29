@@ -35,6 +35,16 @@
           >{{ userInitial }}</span>
         </v-avatar>
         <span class="text-body-2 me-3 d-none d-sm-inline">{{ userName }}</span>
+        <v-chip
+          v-if="authStore.isDemo"
+          size="small"
+          color="primary"
+          variant="tonal"
+          class="me-2"
+          title="Demo Mode: boards are saved in this browser only"
+        >
+          Demo
+        </v-chip>
         <v-btn
           variant="text"
           prepend-icon="mdi-logout"
