@@ -189,6 +189,12 @@ ESLint (flat config, `eslint.config.js`) with `typescript-eslint`, `eslint-plugi
 - **Vuetify and Vite pre-bundling**: `vuetify` is excluded from `optimizeDeps` in `vite.config.ts`. Otherwise, with a cold Vite cache, auto-imported components are discovered as pages load, and Vite re-optimizes and reloads the page mid-session, which breaks in-flight actions and E2E tests.
 - **Leftover emulators**: `firebase emulators:exec` left the Firestore emulator's Java process running on Windows, hence `scripts/with-emulators.ts`, which stops the emulators' whole process tree (`taskkill /T` on Windows, a process-group kill elsewhere; the latter verified on macOS). It stops them on Ctrl+C, a kill (SIGTERM) and a hang-up (SIGHUP), which is what closing the terminal or IDE task running `npm run emulators` sends. Before SIGHUP was handled, closing that terminal killed only the script and left the emulators running unparented: the CLI later exited, and the Firestore emulator's Java process kept port 8080, so every E2E sign-in hung for want of the Auth emulator. `npm run emulators:stop` clears such leftovers.
 - **"Port taken" errors**: if a run fails with "port taken", run `npm run emulators:stop`. It clears a leftover `java` process on port 8080 or a running `npm run emulators` session; if it reports a port held by a non-emulator process, stop that process yourself.
+- **Dependency overrides** (`overrides` in `package.json`): three nested packages are forced past versions with security advisories that their parents still pin. Each only runs under Node (tests and the Firebase CLI), never in the browser bundle, and each override was checked against what the parent uses:
+  - `@grpc/grpc-js` ^1.14.6 under `@firebase/firestore`, which pins ~1.9 even in its latest release. The SDK uses gRPC only in Node (the emulator tests); the browser build talks to Firestore over WebChannel. The emulator tests exercise it.
+  - `@opentelemetry/core` ^2.8.0 under `@google-cloud/pubsub` 5 (from `firebase-tools`), which only uses its `W3CTraceContextPropagator`.
+  - `uuid` ^11.1.1 under `gaxios` 6 (from `firebase-tools`), which only calls `v4()`.
+
+  When updating Firebase or `firebase-tools`, check whether the parents have caught up (`npm ls @grpc/grpc-js @opentelemetry/core uuid`) and drop overrides that are no longer needed; `npm audit` should stay at 0.
 
 ## Project Status
 
