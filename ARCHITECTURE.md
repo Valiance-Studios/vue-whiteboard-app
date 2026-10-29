@@ -129,15 +129,30 @@ Visitors can use the app without an account, with their boards kept in this brow
 
 Firebase Hosting, deployed manually, to the dev project `vs-valiance-studios-dev` (`dev` alias in `.firebaserc`). There is no production project yet; adding one means another alias and another `.env` file, not a rework. `default` stays the `demo-whiteboard-app` emulator project so a stray `firebase` command cannot reach real infrastructure.
 
-- **First-time setup**: `firebase login`, then copy `.env.example` to `.env.production.local` and fill it in from the `vue-whiteboard-app-dev` web app config. Use `.env.production.local`, not `.env.local`: Vite loads `.env.local` in every mode, so real credentials there would point `npm run dev` and the E2E tests at real Firebase instead of the emulators.
+- **First-time setup**: `firebase login`, then copy `.env.example` to `.env.production.local` and fill it in from the `vue-whiteboard-app-dev` web app config, plus the App Check site key (see "App Check"). Use `.env.production.local`, not `.env.local`: Vite loads `.env.local` in every mode, so real credentials there would point `npm run dev` and the E2E tests at real Firebase instead of the emulators.
 - **Allowlist**: before the first rules deploy, add `allowedUsers/<lowercase email>` (no fields) to the `vue-whiteboard-app` database in the Firebase console for each person who should have access, or everyone, including you, is locked out. Add and remove people the same way later; no deploy is needed.
 - **Deploy**: `npm run deploy` (hosting + Firestore rules and indexes), or `npm run deploy:hosting` / `npm run deploy:rules` for one of them. All three are pinned to `--project dev`. `firebase deploy --dry-run` validates a deploy, including the predeploy build and rules compilation, without publishing.
 - The app has its **own Hosting site**, `vs-valiance-studios-dev-whiteboard` (`hosting.site` in `firebase.json`), served at https://vs-valiance-studios-dev-whiteboard.web.app. The project's default site is left free for other Valiance Studios apps, and deploys here cannot affect them. A custom domain, if one is wanted later, attaches to this site without redeploying.
-- `hosting.predeploy` runs `scripts/check-firebase-config.ts` and then the build, so a deploy fails early if the config is missing or still points at the emulators, rather than serving an app that cannot reach Firebase. `npm run build` on its own needs no credentials, since it doubles as the type and bundle check.
+- `hosting.predeploy` runs `scripts/check-firebase-config.ts` and then the build, so a deploy fails early if the config or the App Check site key is missing, or the config still points at the emulators, rather than serving an app that cannot reach Firebase. `npm run build` on its own needs no credentials, since it doubles as the type and bundle check.
 - The `firestore` entry in `firebase.json` is the **array form with an explicit `database`**, so a rules deploy can only ever reach `vue-whiteboard-app`. The single-object form would deploy to `(default)` and could overwrite another app's rules in the shared project.
 - SPA routing needs the `**` → `/index.html` rewrite, or reloading `/boards/:id` would 404. Hashed assets under `/assets` are served immutable for a year; `index.html` is not cached.
 - After the first deploy, add the hosting domain to **Authentication > Settings > Authorized domains** if a custom domain is used. `*.web.app` and `*.firebaseapp.com` are authorized automatically.
 - The Hosting emulator is deliberately not part of `npm run emulators` (`--only auth,firestore`): local work is served by Vite on port 5173, and the Hosting emulator would serve a stale `dist`.
+
+## App Check
+
+App Check (reCAPTCHA Enterprise) attests that requests come from this web app, so once it is enforced, Firestore rejects calls from scripts that only have the (public) web config, even with an allowlisted account's token. It does not stop someone using the real site in a browser; the allowlist covers that. It is used on the dev project too, since that project is public, on billing, and in use.
+
+- **Client** (`src/firebase/index.ts`): `initializeAppCheck` with `ReCaptchaEnterpriseProvider` and token auto-refresh, before any Firestore call. It is skipped against the emulators (which do not check App Check) and when no site key is set, so `npm run dev`, the emulator tests and the E2E tests are unaffected.
+- **Site key**: `VITE_APPCHECK_SITE_KEY` in `.env.production.local` (site keys are public; it sits beside the web config for consistency). `scripts/check-firebase-config.ts` fails a deploy without it, because a build without App Check would be locked out the moment enforcement is turned on.
+- **Console setup** (once per project):
+  1. Google Cloud console > Security > reCAPTCHA (enable the reCAPTCHA Enterprise API if asked): create a **website** key for the hosting domains, `vs-valiance-studios-dev-whiteboard.web.app` and `vs-valiance-studios-dev-whiteboard.firebaseapp.com`, plus any custom domain. Do not enable a challenge; App Check uses score-based keys.
+  2. Firebase console > App Check > Apps: register the web app with the **reCAPTCHA Enterprise** provider and that site key.
+  3. Put the key in `.env.production.local` as `VITE_APPCHECK_SITE_KEY` and deploy.
+  4. **Monitor before enforcing**: leave Firestore unenforced for a few days and watch App Check > APIs > Cloud Firestore. Nearly all requests should be "verified". Unverified ones come from old cached builds, scripts, or a misconfigured domain.
+  5. **Enforce** for Cloud Firestore. If the app breaks, unenforce in the console; it takes effect within minutes and needs no deploy.
+- Running the dev server against the real project (not the emulators) would need an App Check debug token once enforced; nothing here does that today.
+- A future production project repeats the console steps with its own key; the code does not change.
 
 ## Testing
 
@@ -191,7 +206,8 @@ Last updated 2026-10-28.
 
 **Next**
 - First manual deploy (`npm run deploy`) once `.env.production.local` exists and the allowlist has an entry for you, then a sign-in smoke test on the hosted URL.
-- Before wider use: App Check (reCAPTCHA Enterprise) enforced for Firestore, so only the real web app can call it, and a budget alert on the project's billing account.
+- App Check console setup and rollout on the dev project (see "App Check": create the key, register the app, deploy, monitor, then enforce for Firestore).
+- A budget alert on the project's billing account.
 
 **Later**
 - Real Firebase project config, once created (`.env.local`, from `.env.example`).
