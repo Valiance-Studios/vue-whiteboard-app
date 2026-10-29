@@ -25,16 +25,6 @@
         hide-details
         clearable
       />
-
-      <v-btn
-        color="primary"
-        prepend-icon="mdi-plus"
-        size="large"
-        rounded="lg"
-        @click="createDialogOpen = true"
-      >
-        New board
-      </v-btn>
     </div>
 
     <v-progress-linear
@@ -65,6 +55,18 @@
       v-if="boardsStore.visibleBoards.length > 0"
       class="board-grid"
     >
+      <!-- Creating a board lives with the boards. Hidden while searching, so only matches show. -->
+      <button
+        v-if="!isSearching"
+        type="button"
+        class="new-board-tile"
+        @click="createDialogOpen = true"
+      >
+        <span class="new-board-tile__icon">
+          <v-icon icon="mdi-plus" />
+        </span>
+        New board
+      </button>
       <board-card
         v-for="board in boardsStore.visibleBoards"
         :key="board.id"
@@ -89,7 +91,7 @@
           prepend-icon="mdi-plus"
           @click="createDialogOpen = true"
         >
-          Create your first board
+          New board
         </v-btn>
       </template>
     </v-empty-state>
@@ -234,19 +236,21 @@ export default defineComponent({
 .collection-header {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   gap: 16px 24px;
 
+  // The count sits beside the heading, sharing its baseline.
   &__title {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
     margin-right: auto;
   }
 
   &__search {
-    flex: 0 1 360px;
-    min-width: 220px;
+    flex: 0 1 400px;
+    min-width: 240px;
   }
 }
 
@@ -254,5 +258,52 @@ export default defineComponent({
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 24px;
+}
+
+// As tall as the cards beside it, which the grid row stretches it to; the minimum covers a row of its own.
+.new-board-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 236px;
+  border: 2px dashed rgba(var(--v-theme-on-surface), 0.25);
+  border-radius: 24px;
+  background: transparent;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    border-color: rgb(var(--v-theme-primary));
+    background: rgba(var(--v-theme-primary), 0.06);
+  }
+
+  &:focus-visible {
+    outline: 3px solid rgb(var(--v-theme-primary));
+    outline-offset: 3px;
+  }
+
+  // On phones, where the grid is one column, a full card's height would push the boards off screen.
+  @media (max-width: 599.98px) {
+    flex-direction: row;
+    min-height: 72px;
+  }
+
+  &__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgb(var(--v-theme-primary));
+    color: rgb(var(--v-theme-on-primary));
+    box-shadow: 0 2px 6px rgba(31, 59, 115, 0.3);
+  }
 }
 </style>

@@ -25,7 +25,7 @@ test.describe('board collection', () => {
 
   test('shows an empty state for a new user', async ({page}) => {
     await expect(page.getByText('No boards yet')).toBeVisible();
-    await expect(page.getByRole('button', {name: 'Create your first board'})).toBeVisible();
+    await expect(page.getByRole('button', {name: 'New board'})).toBeVisible();
   });
 
   test('creates a board, opens it, and lists it', async ({page}) => {
@@ -55,6 +55,21 @@ test.describe('board collection', () => {
 
     await expect(dialog.getByText('Title is required.')).toBeVisible();
     await expect(page).toHaveURL(/\/boards$/);
+  });
+
+  test('offers a new board tile first in the grid, except while searching', async ({page}) => {
+    await createBoardAndGoBack(page, 'Existing');
+
+    const tiles = page.locator('.board-grid > *');
+    await expect(tiles.first()).toHaveText('New board');
+
+    await page.getByRole('textbox', {name: 'Search by title'}).fill('exist');
+    await expect(boardCards(page)).toHaveCount(1);
+    await expect(page.getByRole('button', {name: 'New board'})).toHaveCount(0);
+
+    await page.getByRole('textbox', {name: 'Search by title'}).clear();
+    await page.getByRole('button', {name: 'New board'}).click();
+    await expect(page.getByRole('dialog').getByText('New board')).toBeVisible();
   });
 
   test('filters boards by case-insensitive title substring', async ({page}) => {
