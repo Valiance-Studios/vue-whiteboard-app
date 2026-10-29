@@ -164,7 +164,8 @@ export default defineComponent({
     justify-content: center;
     height: 100%;
     font-style: italic;
-    opacity: 0.6;
+    // Set, not inherited: the board stays white in the dark theme, where the inherited text is light.
+    color: #5b6573;
   }
 
   &__details {
