@@ -13,6 +13,7 @@
 import type {ChildProcess} from 'node:child_process';
 
 import {spawn, spawnSync} from 'node:child_process';
+import {constants} from 'node:os';
 
 const KEEP_RUNNING_FLAG = '--keep-running';
 const READY_PATTERN = /All emulators ready/;
@@ -120,10 +121,12 @@ async function main(): Promise<number> {
   const {emulatorArgs, command, keepRunning} = parseArgs(process.argv.slice(2));
   const emulators = await startEmulators(emulatorArgs, keepRunning);
 
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  // SIGHUP is what closing the terminal (or IDE task) running this sends. Unhandled, it killed this script
+  // alone and left the emulators running with no parent, still holding their ports.
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
     process.once(signal, () => {
-      // Ctrl+C is how a kept-running session ends normally, so it is not reported as a failure.
-      void stopEmulators(emulators).then(() => process.exit(keepRunning ? 0 : 130));
+      // Ending a kept-running session this way is normal, so it is not reported as a failure.
+      void stopEmulators(emulators).then(() => process.exit(keepRunning ? 0 : 128 + constants.signals[signal]));
     });
   }
 
