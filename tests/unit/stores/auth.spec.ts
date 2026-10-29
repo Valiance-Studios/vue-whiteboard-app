@@ -2,11 +2,11 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {createPinia, setActivePinia} from 'pinia';
 import {FirebaseError} from 'firebase/app';
 import {onAuthStateChanged, signInWithPopup, signOut} from 'firebase/auth';
-import {hasFirestoreAccess} from '@/firebase/access';
+import {hasFirestoreAccess, recordAccessRequest} from '@/firebase/access';
 import {useAuthStore} from '@/stores/auth';
 
 vi.mock('@/firebase', () => ({auth: {}}));
-vi.mock('@/firebase/access', () => ({hasFirestoreAccess: vi.fn()}));
+vi.mock('@/firebase/access', () => ({hasFirestoreAccess: vi.fn(), recordAccessRequest: vi.fn()}));
 vi.mock('firebase/auth', () => ({
   GoogleAuthProvider: vi.fn(),
   onAuthStateChanged: vi.fn(),
@@ -24,6 +24,7 @@ describe('auth store: signInWithGoogle', () => {
     vi.clearAllMocks();
     vi.mocked(signInWithPopup).mockResolvedValue({user: ADA} as Awaited<ReturnType<typeof signInWithPopup>>);
     vi.mocked(hasFirestoreAccess).mockResolvedValue(true);
+    vi.mocked(recordAccessRequest).mockResolvedValue();
   });
 
   it('stores the signed-in user and reports success', async () => {
@@ -42,6 +43,36 @@ describe('auth store: signInWithGoogle', () => {
     expect(store.user).toBeNull();
     expect(store.deniedUser).toEqual(ADA_SESSION);
     expect(signOut).toHaveBeenCalled();
+  });
+
+  it('records a denied sign-in once, though the auth state listener reports it too', async () => {
+    vi.mocked(hasFirestoreAccess).mockResolvedValue(false);
+    const store = useAuthStore();
+
+    await Promise.all([store.signInWithGoogle(), store.startSession(ADA as Parameters<typeof store.startSession>[0])]);
+
+    expect(recordAccessRequest).toHaveBeenCalledTimes(1);
+    expect(recordAccessRequest).toHaveBeenCalledWith(ADA);
+    expect(store.accessRequested).toBe(true);
+  });
+
+  it('still denies access, without claiming a request, when recording it fails', async () => {
+    vi.mocked(hasFirestoreAccess).mockResolvedValue(false);
+    vi.mocked(recordAccessRequest).mockRejectedValue(new Error('permission-denied'));
+    const store = useAuthStore();
+
+    await expect(store.signInWithGoogle()).resolves.toBe(false);
+
+    expect(store.user).toBeNull();
+    expect(store.deniedUser).toEqual(ADA_SESSION);
+    expect(store.accessRequested).toBe(false);
+    expect(signOut).toHaveBeenCalled();
+  });
+
+  it('does not record a request for an allowed user', async () => {
+    await useAuthStore().signInWithGoogle();
+
+    expect(recordAccessRequest).not.toHaveBeenCalled();
   });
 
   it('clears the denied user when signing in again', async () => {

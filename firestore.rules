@@ -61,6 +61,27 @@ service cloud.firestore {
       allow get: if isSignedIn() && signedInEmail() == email;
     }
 
+    // Keep in sync with recordAccessRequest in src/firebase/access.ts.
+    function isValidAccessRequest(data) {
+      return data.keys().hasOnly(['email', 'displayName', 'requestedAt'])
+        && data.email == request.auth.token.email
+        && (data.displayName == null || (data.displayName is string && data.displayName.size() <= 200))
+        && data.requestedAt == request.time;
+    }
+
+    // Denied sign-ins, which the app records for the owner to review in the console. Users write only
+    // their own request, at most once a minute; nobody reads, lists or deletes requests through the app.
+    match /accessRequests/{uid} {
+      allow create: if isSignedIn()
+        && request.auth.uid == uid
+        && isValidAccessRequest(request.resource.data);
+
+      allow update: if isSignedIn()
+        && request.auth.uid == uid
+        && isValidAccessRequest(request.resource.data)
+        && request.time > resource.data.requestedAt + duration.value(1, 'm');
+    }
+
     match /boards/{boardId} {
       // Reading a missing board is denied the same as reading another user's board,
       // so the existence of other users' boards is never revealed.

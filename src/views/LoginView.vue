@@ -28,6 +28,9 @@
               density="compact"
             >
               {{ authStore.deniedUser.email ?? 'This account' }} does not have access to this app.
+              <template v-if="authStore.accessRequested">
+                Your request has been recorded for the app's owner.
+              </template>
             </v-alert>
 
             <v-alert
