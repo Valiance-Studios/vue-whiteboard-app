@@ -45,6 +45,7 @@
           class="board-sheet__writing"
           aria-label="Board content"
           placeholder="Write on the board…"
+          :maxlength="contentMaxLength"
           variant="plain"
           rows="16"
           hide-details
@@ -99,11 +100,18 @@ import type {RouteLocationRaw} from 'vue-router';
 import {defineComponent} from 'vue';
 import {mapStores} from 'pinia';
 import {debounce} from '@/utils/debounce';
+import {BOARD_CONTENT_MAX_LENGTH, BOARD_MIN_SAVE_INTERVAL_MS} from '@/constants/board';
 import {RouteName} from '@/router/routes';
 import {useBoardsStore} from '@/stores/boards';
 
 /** How long typing pauses before the board is saved. */
 const SAVE_DEBOUNCE_MS = 800;
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 /** What the header tells the user about the state of their writing. */
 interface SaveStatus {
@@ -146,6 +154,9 @@ export default defineComponent({
       /** Whether the user has typed, so a board they only read shows no save status. */
       edited: false,
       saveContentLater: null as Debounced<[]> | null,
+      /** When the last write was acknowledged, in epoch ms, so the next one keeps the gap the rules require. */
+      lastSavedAt: 0,
+      contentMaxLength: BOARD_CONTENT_MAX_LENGTH,
       boardCollectionRoute: {name: RouteName.BoardCollection} as RouteLocationRaw,
     };
   },
@@ -234,6 +245,7 @@ export default defineComponent({
       this.saving = false;
       this.saveFailed = false;
       this.edited = false;
+      this.lastSavedAt = 0;
     },
 
     onContentInput(value: string): void {
@@ -257,9 +269,18 @@ export default defineComponent({
       try {
         // Re-checked after every write, so text typed while one was in flight is saved as well.
         while (id === this.id && this.unsavedChanges) {
+          // The rules reject writes to a board that come too close together, e.g. text typed during a save.
+          // Clamped, because `setTimeout` wraps a large negative delay round to a long positive one.
+          await wait(Math.max(0, this.lastSavedAt + BOARD_MIN_SAVE_INTERVAL_MS - Date.now()));
+
+          if (id !== this.id) {
+            break;
+          }
+
           const content = this.content;
           await this.boardsStore.saveBoardContent(id, content);
           this.savedContent = content;
+          this.lastSavedAt = Date.now();
         }
       } catch (error) {
         console.error('Failed to save board', error);

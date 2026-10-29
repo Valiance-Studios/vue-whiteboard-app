@@ -1,7 +1,10 @@
 /**
  * Runs a command against the Firebase Local Emulator Suite, then shuts the emulators down.
  *
- * Usage: node scripts/with-emulators.ts [firebase emulators:start args] -- <command>
+ * Usage: node scripts/with-emulators.ts [--keep-running] [firebase emulators:start args] -- <command>
+ *
+ * With `--keep-running`, the emulators stay up after the command succeeds, showing their output,
+ * until Ctrl+C. `npm run emulators` uses this to seed the emulators and then serve local development.
  *
  * Replaces `firebase emulators:exec`, which on Windows leaves the Firestore emulator's Java
  * process running after it exits, so the next run fails with "port taken". This script stops
@@ -11,6 +14,7 @@ import type {ChildProcess} from 'node:child_process';
 
 import {spawn, spawnSync} from 'node:child_process';
 
+const KEEP_RUNNING_FLAG = '--keep-running';
 const READY_PATTERN = /All emulators ready/;
 const STARTUP_TIMEOUT_MS = 120_000;
 const isWindows = process.platform === 'win32';
@@ -18,16 +22,23 @@ const isWindows = process.platform === 'win32';
 interface ParsedArgs {
   emulatorArgs: string[];
   command: string[];
+  keepRunning: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
   const separator = argv.indexOf('--');
 
   if (separator === -1 || separator === argv.length - 1) {
-    throw new Error('Usage: node scripts/with-emulators.ts [emulator args] -- <command>');
+    throw new Error('Usage: node scripts/with-emulators.ts [--keep-running] [emulator args] -- <command>');
   }
 
-  return {emulatorArgs: argv.slice(0, separator), command: argv.slice(separator + 1)};
+  const ownArgs = argv.slice(0, separator);
+
+  return {
+    emulatorArgs: ownArgs.filter((arg) => arg !== KEEP_RUNNING_FLAG),
+    command: argv.slice(separator + 1),
+    keepRunning: ownArgs.includes(KEEP_RUNNING_FLAG),
+  };
 }
 
 function stopEmulators(emulators: ChildProcess): Promise<void> {
@@ -49,8 +60,11 @@ function stopEmulators(emulators: ChildProcess): Promise<void> {
   return exited;
 }
 
-/** Starts the emulators and resolves once they report ready. Their output is shown only if startup fails. */
-function startEmulators(args: string[]): Promise<ChildProcess> {
+/**
+ * Starts the emulators and resolves once they report ready. Their output is shown if startup fails,
+ * or from then on when `showOutput` is set.
+ */
+function startEmulators(args: string[], showOutput: boolean): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
     const emulators = spawn(['firebase', 'emulators:start', ...args].join(' '), {
       shell: true,
@@ -73,9 +87,17 @@ function startEmulators(args: string[]): Promise<ChildProcess> {
         clearTimeout(timer);
         emulators.stdout.off('data', onOutput);
         emulators.stderr.off('data', onOutput);
-        // Keep draining output so the emulators never block on a full pipe.
-        emulators.stdout.resume();
-        emulators.stderr.resume();
+
+        if (showOutput) {
+          process.stdout.write(output);
+          emulators.stdout.pipe(process.stdout);
+          emulators.stderr.pipe(process.stderr);
+        } else {
+          // Keep draining output so the emulators never block on a full pipe.
+          emulators.stdout.resume();
+          emulators.stderr.resume();
+        }
+
         resolve(emulators);
       }
     };
@@ -95,20 +117,33 @@ function runCommand(command: string[]): Promise<number> {
 }
 
 async function main(): Promise<number> {
-  const {emulatorArgs, command} = parseArgs(process.argv.slice(2));
-  const emulators = await startEmulators(emulatorArgs);
+  const {emulatorArgs, command, keepRunning} = parseArgs(process.argv.slice(2));
+  const emulators = await startEmulators(emulatorArgs, keepRunning);
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.once(signal, () => {
-      void stopEmulators(emulators).then(() => process.exit(130));
+      // Ctrl+C is how a kept-running session ends normally, so it is not reported as a failure.
+      void stopEmulators(emulators).then(() => process.exit(keepRunning ? 0 : 130));
     });
   }
 
+  let exitCode = 1;
+
   try {
-    return await runCommand(command);
+    exitCode = await runCommand(command);
   } finally {
-    await stopEmulators(emulators);
+    if (!keepRunning || exitCode !== 0) {
+      await stopEmulators(emulators);
+    }
   }
+
+  if (keepRunning && exitCode === 0) {
+    console.log('Emulators are running. Press Ctrl+C to stop them.');
+    // Wait for Ctrl+C; the signal handlers stop the emulators and exit.
+    await new Promise<never>(() => {});
+  }
+
+  return exitCode;
 }
 
 main().then(
