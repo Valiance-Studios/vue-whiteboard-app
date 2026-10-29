@@ -55,11 +55,10 @@
 <script lang="ts">
 import type {PropType} from 'vue';
 import type {VForm} from 'vuetify/components';
+import type {ValidationRule} from '@/utils/validation';
 
 import {defineComponent} from 'vue';
 import {DEMO_NAME_MAX_LENGTH} from '@/constants/demo';
-
-type ValidationRule = (value: string) => true | string;
 
 /** Asks a new demo visitor for their name. */
 export default defineComponent({

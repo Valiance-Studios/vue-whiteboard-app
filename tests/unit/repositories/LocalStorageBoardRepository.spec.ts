@@ -48,6 +48,30 @@ describe('LocalStorageBoardRepository', () => {
     expect(updated?.updatedAt.time.getTime()).toBeGreaterThanOrEqual(created?.updatedAt.time.getTime() ?? 0);
   });
 
+  it('renames a board, trimming the title and keeping the writing', async () => {
+    const id = await repository().create({title: 'Old'});
+    await repository().update(id, {content: 'Hi', inks: [{ink: 'red', length: 2}]});
+
+    await repository().rename(id, '  New Title  ');
+
+    await expect(repository().get(id)).resolves.toMatchObject({title: 'New Title', titleSearchable: 'new title', content: 'Hi'});
+  });
+
+  it('deletes only the given board', async () => {
+    const gone = await repository().create({title: 'Gone'});
+    await repository().create({title: 'Kept'});
+
+    await repository().delete(gone);
+
+    await expect(repository().get(gone)).resolves.toBeNull();
+    expect((await repository().list()).map((board) => board.title)).toEqual(['Kept']);
+  });
+
+  it('rejects renaming or deleting a board that does not exist', async () => {
+    await expect(repository().rename('missing', 'Anything')).rejects.toThrow();
+    await expect(repository().delete('missing')).rejects.toThrow();
+  });
+
   it('rejects an update to a board that does not exist', async () => {
     await expect(repository().update('missing', {content: 'anything', inks: []})).rejects.toThrow();
   });

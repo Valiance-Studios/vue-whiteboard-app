@@ -176,4 +176,53 @@ describe('FirestoreBoardRepository', () => {
       await expect(repositoryFor(OWNER).update('missing', {content: 'anything', inks: []})).rejects.toThrow();
     });
   });
+
+  describe('rename', () => {
+    it('gives the board a trimmed title and searchable title, keeping its writing', async () => {
+      const repository = repositoryFor(OWNER);
+      const id = await repository.create({title: 'Old Name'});
+      await repository.update(id, {content: 'Keep me', inks: []});
+      await waitForSaveInterval();
+
+      await repository.rename(id, '  New Name  ');
+
+      await expect(repository.get(id)).resolves.toMatchObject({title: 'New Name', titleSearchable: 'new name', content: 'Keep me'});
+    });
+
+    it('rejects a blank title', async () => {
+      const repository = repositoryFor(OWNER);
+      const id = await repository.create({title: 'Name'});
+
+      await expect(repository.rename(id, '   ')).rejects.toThrow();
+    });
+
+    it('rejects renaming another user\'s board', async () => {
+      const id = await repositoryFor(OTHER).create({title: 'Bob Board'});
+
+      await expect(repositoryFor(OWNER).rename(id, 'Mine now')).rejects.toThrow();
+      await expect(repositoryFor(OTHER).get(id)).resolves.toMatchObject({title: 'Bob Board'});
+    });
+  });
+
+  describe('delete', () => {
+    it('deletes the board', async () => {
+      const repository = repositoryFor(OWNER);
+      const id = await repository.create({title: 'Gone'});
+
+      await repository.delete(id);
+
+      await expect(repository.get(id)).resolves.toBeNull();
+    });
+
+    it('rejects deleting another user\'s board', async () => {
+      const id = await repositoryFor(OTHER).create({title: 'Bob Board'});
+
+      await expect(repositoryFor(OWNER).delete(id)).rejects.toThrow();
+      await expect(repositoryFor(OTHER).get(id)).resolves.toMatchObject({title: 'Bob Board'});
+    });
+
+    it('rejects deleting a board that does not exist', async () => {
+      await expect(repositoryFor(OWNER).delete('missing')).rejects.toThrow();
+    });
+  });
 });

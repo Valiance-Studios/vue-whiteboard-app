@@ -69,6 +69,8 @@
         v-for="board in boardsStore.visibleBoards"
         :key="board.id"
         :board="board"
+        @rename="startRename"
+        @delete="startDelete"
       />
     </div>
 
@@ -92,18 +94,39 @@
       </template>
     </v-empty-state>
 
-    <create-board-dialog
+    <board-title-dialog
       v-model="createDialogOpen"
-      @created="openBoard"
+      heading="New board"
+      action-label="Create"
+      :save="createBoard"
+      failure-message="Could not create the board. Please try again."
+    />
+
+    <board-title-dialog
+      v-model="renameDialogOpen"
+      heading="Rename board"
+      action-label="Rename"
+      :initial-title="targetBoard?.title ?? ''"
+      :save="renameBoard"
+      failure-message="Could not rename the board. Please try again."
+    />
+
+    <delete-board-dialog
+      v-model="deleteDialogOpen"
+      :board-title="targetBoard?.title ?? ''"
+      :remove="deleteBoard"
     />
   </v-container>
 </template>
 
 <script lang="ts">
+import type {Board} from '@/types/board';
+
 import {defineComponent} from 'vue';
 import {mapStores} from 'pinia';
 import BoardCard from '@/components/BoardCard.vue';
-import CreateBoardDialog from '@/components/CreateBoardDialog.vue';
+import BoardTitleDialog from '@/components/BoardTitleDialog.vue';
+import DeleteBoardDialog from '@/components/DeleteBoardDialog.vue';
 import {RouteName} from '@/router/routes';
 import {useBoardsStore} from '@/stores/boards';
 import {toSearchable} from '@/utils/search';
@@ -113,12 +136,17 @@ export default defineComponent({
 
   components: {
     BoardCard,
-    CreateBoardDialog,
+    BoardTitleDialog,
+    DeleteBoardDialog,
   },
 
   data() {
     return {
       createDialogOpen: false,
+      renameDialogOpen: false,
+      deleteDialogOpen: false,
+      /** The board being renamed or deleted. Kept after its dialog closes, so the title stays put while it fades. */
+      targetBoard: null as Board | null,
     };
   },
 
@@ -172,8 +200,31 @@ export default defineComponent({
       void this.boardsStore.load();
     },
 
-    openBoard(id: string): void {
-      void this.$router.push({name: RouteName.Board, params: {id}});
+    async createBoard(title: string): Promise<void> {
+      const id = await this.boardsStore.createBoard({title});
+      await this.$router.push({name: RouteName.Board, params: {id}});
+    },
+
+    startRename(board: Board): void {
+      this.targetBoard = board;
+      this.renameDialogOpen = true;
+    },
+
+    startDelete(board: Board): void {
+      this.targetBoard = board;
+      this.deleteDialogOpen = true;
+    },
+
+    async renameBoard(title: string): Promise<void> {
+      if (this.targetBoard) {
+        await this.boardsStore.renameBoard(this.targetBoard.id, title);
+      }
+    },
+
+    async deleteBoard(): Promise<void> {
+      if (this.targetBoard) {
+        await this.boardsStore.deleteBoard(this.targetBoard.id);
+      }
     },
   },
 });

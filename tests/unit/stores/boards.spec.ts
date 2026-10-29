@@ -29,7 +29,7 @@ describe('boards store', () => {
     setActivePinia(createPinia());
     useAuthStore().user = {...SESSION_USER};
 
-    repository = {list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn()};
+    repository = {list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), rename: vi.fn(), delete: vi.fn()};
     vi.mocked(createBoardRepository).mockReturnValue(repository as unknown as BoardRepository);
   });
 
@@ -127,6 +127,48 @@ describe('boards store', () => {
 
     await expect(useBoardsStore().createBoard({title: 'Plans'})).resolves.toBe('new-id');
     expect(repository.create).toHaveBeenCalledWith({title: 'Plans'});
+  });
+
+  it('renames a board and updates it in the loaded list', async () => {
+    repository.list.mockResolvedValue([makeBoard('1', 'Old Name'), makeBoard('2', 'Other')]);
+    const store = useBoardsStore();
+    await store.load();
+
+    await store.renameBoard('1', '  New Name  ');
+
+    expect(repository.rename).toHaveBeenCalledWith('1', '  New Name  ');
+    expect(store.boards[0]).toMatchObject({title: 'New Name', titleSearchable: 'new name'});
+  });
+
+  it('keeps the loaded title when a rename fails', async () => {
+    repository.list.mockResolvedValue([makeBoard('1', 'Old Name')]);
+    repository.rename.mockRejectedValue(new Error('permission-denied'));
+    const store = useBoardsStore();
+    await store.load();
+
+    await expect(store.renameBoard('1', 'New Name')).rejects.toThrow('permission-denied');
+    expect(store.boards[0].title).toBe('Old Name');
+  });
+
+  it('deletes a board and drops it from the loaded list', async () => {
+    repository.list.mockResolvedValue([makeBoard('1', 'Gone'), makeBoard('2', 'Kept')]);
+    const store = useBoardsStore();
+    await store.load();
+
+    await store.deleteBoard('1');
+
+    expect(repository.delete).toHaveBeenCalledWith('1');
+    expect(store.boards.map((board) => board.title)).toEqual(['Kept']);
+  });
+
+  it('keeps a board in the loaded list when deleting it fails', async () => {
+    repository.list.mockResolvedValue([makeBoard('1', 'Kept')]);
+    repository.delete.mockRejectedValue(new Error('permission-denied'));
+    const store = useBoardsStore();
+    await store.load();
+
+    await expect(store.deleteBoard('1')).rejects.toThrow('permission-denied');
+    expect(store.boards).toHaveLength(1);
   });
 
   it('saves board writing through the repository', async () => {

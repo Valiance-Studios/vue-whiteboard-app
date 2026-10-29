@@ -1,6 +1,5 @@
 <template>
   <v-card
-    :to="boardRoute"
     class="board-card"
     rounded="xl"
     elevation="0"
@@ -26,13 +25,37 @@
     </div>
 
     <div class="board-card__details">
-      <span class="board-card__title">{{ board.title }}</span>
-      <span
-        class="text-body-2 text-medium-emphasis"
-        :title="updatedAtFull"
-      >
-        Updated {{ updatedAt }}
-      </span>
+      <div class="board-card__text">
+        <router-link
+          :to="boardRoute"
+          class="board-card__title"
+        >
+          {{ board.title }}
+        </router-link>
+        <span
+          class="text-body-2 text-medium-emphasis"
+          :title="updatedAtFull"
+        >
+          Updated {{ updatedAt }}
+        </span>
+      </div>
+
+      <div class="board-card__actions">
+        <v-btn
+          icon="mdi-pencil-outline"
+          variant="text"
+          size="small"
+          :aria-label="`Rename ${board.title}`"
+          @click="$emit('rename', board)"
+        />
+        <v-btn
+          icon="mdi-trash-can-outline"
+          variant="text"
+          size="small"
+          :aria-label="`Delete ${board.title}`"
+          @click="$emit('delete', board)"
+        />
+      </div>
     </div>
   </v-card>
 </template>
@@ -66,6 +89,11 @@ export default defineComponent({
     },
   },
 
+  emits: {
+    rename: (board: Board) => Boolean(board),
+    delete: (board: Board) => Boolean(board),
+  },
+
   computed: {
     boardRoute(): RouteLocationRaw {
       return {name: RouteName.Board, params: {id: this.board.id}};
@@ -91,6 +119,9 @@ export default defineComponent({
 @use '@/styles/board';
 
 .board-card {
+  // The title link is stretched over the whole card (see `__title`), so the card opens the board
+  // without being a link itself, which could not hold the action buttons.
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -102,12 +133,7 @@ export default defineComponent({
     box-shadow: 0 10px 24px rgb(28 35 48 / 12%);
   }
 
-  // The lift replaces Vuetify's grey hover overlay, which would dull the white card.
-  :deep(.v-card__overlay) {
-    display: none;
-  }
-
-  &:focus-visible {
+  &:has(.board-card__title:focus-visible) {
     outline: 3px solid rgb(var(--v-theme-primary));
     outline-offset: 3px;
   }
@@ -143,9 +169,17 @@ export default defineComponent({
 
   &__details {
     display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 0 0 4px;
+  }
+
+  &__text {
+    display: flex;
+    flex: 1;
     flex-direction: column;
     gap: 2px;
-    padding: 0 4px;
+    min-width: 0;
   }
 
   &__title {
@@ -154,6 +188,24 @@ export default defineComponent({
     font-weight: 600;
     white-space: nowrap;
     text-overflow: ellipsis;
+    color: inherit;
+    text-decoration: none;
+    outline: none;
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+    }
+  }
+
+  // Above the stretched link, so the buttons get their own clicks.
+  &__actions {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-shrink: 0;
   }
 }
 </style>

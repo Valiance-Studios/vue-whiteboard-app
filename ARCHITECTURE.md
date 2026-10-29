@@ -29,11 +29,15 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - Includes a search bar filtering by normalized lowercase title (`titleSearchable`). All of the user's boards are loaded once and filtered **in memory**, so a search matches anywhere in the title (case-insensitive), updates instantly, and costs no extra Firestore reads. Results are sorted by title (case-insensitive, numeric-aware, so "Sprint 9" comes before "Sprint 10"). The search term is kept while navigating to a board and back.
    - Revisit if users have very many or very large boards: listing downloads every board's full content. Possible next steps would be moving `content` to a separate document so the list stays small, then pagination plus a search service.
    - Dialog modal to create new boards (title required, max 100 characters). After creation the user is taken to the new board.
+   - Each card has a pencil button (renames the board in the same title dialog, `BoardTitleDialog`, prefilled) and a trash button (deletes it after a confirmation, `DeleteBoardDialog`). The card is not itself a link, since a link cannot contain buttons: its title is the link, stretched over the card with an `::after` overlay, and the buttons sit above that overlay.
    - Empty states distinguish "no boards yet" from "no boards match the search".
 2. **Single Board View (`/boards/:id`)**
    - Dynamic route loading a specific whiteboard. The board is fetched by the `id` route param, and the heading shows the board's title (a skeleton is shown while loading, never the id).
    - Only the board's owner may open it. A board that is missing or owned by someone else is treated identically (Firestore denies both): the view shows a "board not found" message with a link back to `/boards`.
    - A "My Boards" link above the title returns to the collection.
+   - **Renaming**: clicking the title (a button inside the `h1`, with a pencil that appears on hover) turns it into a text field at the heading's size. Enter or leaving the field saves; Escape cancels; an unchanged title just closes it. A blank or too-long title, or a failed save, keeps the field open with the message under it. A rename is a write like any save, so it first waits for pending writing (`flushSave`) and the rules' 500 ms gap after the last write.
+   - **Deleting**: a trash button across from the title, after a confirmation. It drops any unsaved writing, lets a save already running finish, deletes the board and returns to the collection.
+   - `save()` returns the save in progress (`runningSave`) instead of returning at once when one is running, so renaming, deleting and leaving the board can all wait for it.
    - `WhiteboardSheet` is styled to resemble a physical dry-erase board (aluminium frame, glossy sheen) with a marker font. The font stack uses faces already installed on macOS and Windows, so the board needs no web font.
    - **Marker tray** (`MarkerTray`): an aluminium ledge under the board holding six markers (black, blue, red, green, purple, orange; `src/constants/markers.ts`). The marker in hand is lifted and named ("Marker · Red"). Picking one recolors the selected text, if any, and colors everything written from then on, so a board can mix colors. Each visit starts with blue.
    - **Editor**: a Tiptap editor limited to plain lines of colored text (`src/editor/`: document, paragraph, text, the `Ink` mark, undo/redo, placeholder, `ContentLimit`). There is no bold, headings or lists. Tiptap's document format stays inside `WhiteboardSheet` and `src/editor/`: the sheet takes and emits a `BoardWriting` (`content` plus ink runs), so the rest of the app never sees it.
@@ -93,16 +97,16 @@ Boards are private to their owner. The owner is the creator, identified by `crea
 
 Components never call Firestore directly. The layers are:
 
-- **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. `list()`, `get(id)` (returns `null` for a missing board or another user's board), `create(input)`, and `update(id, changes)`. Unlike `get`, `update` rejects for a missing or someone else's board, so the view can report a failed save.
+- **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. `list()`, `get(id)` (returns `null` for a missing board or another user's board), `create(input)`, `update(id, changes)`, `rename(id, title)` and `delete(id)`. Unlike `get`, the writes reject for a missing or someone else's board, so the view can report the failure. `rename` trims the title and re-stamps `updatedAt`; a Firestore rename is an ordinary update, so the rules check the title and the write interval as for any update.
 - **`FirestoreBoardRepository`**: the only implementation for now. Maps Firestore documents to the domain `Board` and applies the owner filter required by the rules.
 - **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session: `FirestoreBoardRepository` for Google accounts, `LocalStorageBoardRepository` for demo mode. Callers build a repository per use instead of keeping one, so it always matches the current session and no cache has to be invalidated on sign-in or sign-out. Implementations must therefore be **cheap to construct and hold no state between calls** - `FirestoreBoardRepository` is just a uid alongside the shared `db` singleton. `LocalStorageBoardRepository` likewise reads and writes `localStorage` on each call rather than caching boards in a field.
-- **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call, discards a load that finishes after the session changed, and is reset on sign-out. `saveBoardWriting(id, writing)` lets errors propagate, because the board view owns the save status rather than the store.
+- **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call, discards a load that finishes after the session changed, and is reset on sign-out. `renameBoard` and `deleteBoard` update the loaded list only after the repository succeeds. `saveBoardWriting(id, writing)`, `renameBoard` and `deleteBoard` let errors propagate, because the views own the save status and dialogs rather than the store.
 
 ## Demo Mode
 
 Visitors can use the app without an account, with their boards kept in this browser's `localStorage`. Everything after the login page works the same as for a Google account; the views do not know which kind of session they are in.
 
-- **Starting**: the login page's **Demo Mode** button. A first-time visitor is asked for a name (`DemoModeDialog`, required, at most 50 characters), which becomes the session's `displayName`. A returning visitor in the same browser goes straight in under their saved name; the login card greets them ("Welcome back, Grace.") with a **Not you?** link. That asks someone new for a name, warning that starting deletes the previous visitor's demo boards (`enterDemoAsSomeoneNew`, which calls `clearDemoBoards`); cancelling keeps everything.
+- **Starting**: the login page's **Demo Mode** button. A first-time visitor is asked for a name (`DemoModeDialog`, required, at most 50 characters), which becomes the session's `displayName`. A returning visitor in the same browser goes straight in under their saved name; under the Demo Mode button, the login card greets them in a tinted panel (their initial, "Welcome back, Grace") with a **Not you?** button. That asks someone new for a name, warning that starting deletes the previous visitor's demo boards (`enterDemoAsSomeoneNew`, which calls `clearDemoBoards`); cancelling keeps everything.
 - **Session**: `SessionUser.kind` is `'google'` or `'demo'`. A demo session has uid `demo`, no email and no photo. The auth store's `enterDemo(name?)` starts one (returning `false` when there is no name given or saved, so the login page can ask), and the `isDemo` getter drives the app bar's "Demo" chip. The route guard only checks for a session, so demo sessions pass it.
 - **Profile** (`DemoProfileStorage`, key `whiteboard.demo.profile`): `{displayName, active}`. `active` is what keeps a demo session across reloads: `init()` resumes it before Firebase reports its (empty) auth state, and Firebase reporting no user does not end a demo session. Signing out clears `active` but keeps the name and the boards, which is how the next visit skips the name prompt. An unreadable profile counts as none.
 - **Boards** (`LocalStorageBoardRepository`, key `whiteboard.demo.boards`): a JSON array of boards, dates as ISO strings and inks as runs, re-normalized on read. Methods are `async`, so a storage error such as a full quota (browsers allow roughly 5 MB per origin) rejects and shows as a failed save. There are no Firestore rules here; the views' own limits (title length, content length) still apply.
@@ -146,6 +150,7 @@ Firebase Hosting, deployed manually, to the dev project `vs-valiance-studios-dev
 ## Styling
 
 - The Vuetify theme `whiteboard` (`src/plugins/vuetify.ts`) sets marker blue `#1f3b73` as `primary` on a light cool-grey background.
+- Vuetify's theme variables are comma-separated channels (`--v-theme-primary: 31,59,115`), so a translucent theme color is `rgba(var(--v-theme-primary), 0.08)`. The slash form, `rgb(var(--v-theme-primary) / 8%)`, mixes the two syntaxes; browsers drop it silently and the color never shows.
 - The dry-erase look (marker font stack, aluminium frame and glossy surface) lives in `src/styles/_board.scss`. Marker colors live in code (`src/constants/markers.ts`), because the editor and the previews need them there. Components pull it in with `@use '@/styles/board';` (the `@/` alias works in Sass too), so the board view and the collection's previews cannot drift apart.
 
 ## Linting
@@ -177,12 +182,11 @@ Last updated 2026-10-28.
 - Visual refresh of the app bar and Board Collection View: a custom Vuetify theme, whiteboard-style board cards, and a board count.
 - Marker tray and multi-color writing on the Single Board View (a Tiptap editor), with colors stored as `inks` runs and shown in the collection previews.
 - Demo Mode: a name-only session from the login page, with boards kept in `localStorage`; returning visitors go straight in.
+- Renaming and deleting boards, from the board cards and from the board page.
 
 **Next**
 - First manual deploy (`npm run deploy`) once `.env.production.local` exists and the allowlist has an entry for you, then a sign-in smoke test on the hosted URL.
 - Before wider use: App Check (reCAPTCHA Enterprise) enforced for Firestore, so only the real web app can call it, and a budget alert on the project's billing account.
-- Other candidates, in no particular order:
-  - Renaming and deleting a board (the rules already allow both for the owner; `update` takes a `BoardUpdateInput`, so a `title` field can be added to it).
 
 **Later**
 - Real Firebase project config, once created (`.env.local`, from `.env.example`).

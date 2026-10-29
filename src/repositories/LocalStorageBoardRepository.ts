@@ -91,17 +91,43 @@ export class LocalStorageBoardRepository implements BoardRepository {
     return id;
   }
 
-  async update(id: string, changes: BoardUpdateInput): Promise<void> {
-    const boards = this.read();
+  /** The board with this id in `boards`, which writes to it change. Throws for a missing board, as Firestore would. */
+  private find(boards: StoredBoard[], id: string): StoredBoard {
     const board = boards.find((stored) => stored.id === id);
 
     if (!board) {
       throw new Error(`Board ${id} does not exist.`);
     }
 
+    return board;
+  }
+
+  async update(id: string, changes: BoardUpdateInput): Promise<void> {
+    const boards = this.read();
+    const board = this.find(boards, id);
+
     board.content = changes.content;
     board.inks = normalizeInks(changes.inks, changes.content.length);
     board.updatedAt = this.stamp();
     this.write(boards);
+  }
+
+  async rename(id: string, title: string): Promise<void> {
+    const boards = this.read();
+    const board = this.find(boards, id);
+    const trimmed = title.trim();
+
+    board.title = trimmed;
+    board.titleSearchable = toSearchable(trimmed);
+    board.updatedAt = this.stamp();
+    this.write(boards);
+  }
+
+  async delete(id: string): Promise<void> {
+    const boards = this.read();
+    // Throws for a missing board, as Firestore's rules would.
+    this.find(boards, id);
+
+    this.write(boards.filter((board) => board.id !== id));
   }
 }
