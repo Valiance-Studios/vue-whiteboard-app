@@ -34,5 +34,8 @@ export interface NewBoardInput {
   title: string;
 }
 
+/** A board to start with, such as demo mode's sample boards. */
+export type SeedBoard = NewBoardInput & BoardWriting;
+
 /** User-supplied fields for updating an existing board. */
 export type BoardUpdateInput = BoardWriting;

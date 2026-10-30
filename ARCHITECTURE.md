@@ -21,7 +21,7 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
 0. **Login View (`/login`)**
    - Google sign-in via Firebase Authentication.
    - Unauthenticated users are redirected here by a global route guard; after sign-in they return to the route they originally requested.
-   - A **Demo Mode** button below Google sign-in starts demo mode (see "Demo Mode").
+   - A **Demo Mode** button below Google sign-in starts demo mode (see "Demo Mode"). `/demo` starts it without showing this page.
    - Only allowlisted accounts get a session (see "Access Rules"). Anyone else is signed straight back out, on sign-in and on page load alike, and the page says which account has no access. The denied sign-in is recorded in `accessRequests` for the owner (see below), and the page adds "Your request has been recorded for the app's owner." when that write succeeded.
 1. **Board Collection View (`/boards`)**
    - Displays a searchable grid of the boards the signed-in user has created (other users' boards are never listed).
@@ -52,7 +52,7 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
 
 Every page shares an app bar with the marker logo on the left and the theme toggle on the right. Once signed in, the toggle is followed by the user's Google photo (or initial, when the account has no photo) and name, a "Demo" chip in demo mode, and Sign out. On phones the name is hidden and Sign out shows only its icon (keeping "Sign out" as its accessible name), so the title is not squeezed out.
 
-`/` redirects to `/boards`. Routes requiring a session are flagged with `meta.requiresAuth`.
+`/` redirects to `/boards`. Routes requiring a session are flagged with `meta.requiresAuth`. `/demo` (`meta.startsDemo`) always redirects to `/boards`, starting demo mode first if there is no session (see "Demo Mode").
 
 ## Data Model (Firestore `boards` collection)
 
@@ -115,9 +115,11 @@ Components never call Firestore directly. The layers are:
 Visitors can use the app without an account, with their boards kept in this browser's `localStorage`. Everything after the login page works the same as for a Google account; the views do not know which kind of session they are in.
 
 - **Starting**: the login page's **Demo Mode** button. A first-time visitor is asked for a name (`DemoModeDialog`, required, at most 50 characters), which becomes the session's `displayName`. A returning visitor in the same browser goes straight in under their saved name; under the Demo Mode button, the login card greets them in a tinted panel (their initial, "Welcome back, Grace") with a **Not you?** button. That asks someone new for a name, warning that starting deletes the previous visitor's demo boards (`enterDemoAsSomeoneNew`, which calls `clearDemoBoards`); cancelling keeps everything.
+- **Demo link** (`/demo`, for a resume or LinkedIn): goes straight to the boards with no name prompt. A returning visitor enters under their saved name; a first-time one enters as "Guest" (`DEMO_GUEST_NAME`, through the auth store's `enterDemoAsGuest`). An existing session, Google or demo, is kept. The route names `LoginView` only because a record needs a component; `sessionGuard` always redirects before it renders.
 - **Session**: `SessionUser.kind` is `'google'` or `'demo'`. A demo session has uid `demo`, no email and no photo. The auth store's `enterDemo(name?)` starts one (returning `false` when there is no name given or saved, so the login page can ask), and the `isDemo` getter drives the app bar's "Demo" chip. The route guard only checks for a session, so demo sessions pass it.
 - **Profile** (`DemoProfileStorage`, key `whiteboard.demo.profile`): `{displayName, active}`. `active` is what keeps a demo session across reloads: `init()` resumes it before Firebase reports its (empty) auth state, and Firebase reporting no user does not end a demo session. Signing out clears `active` but keeps the name and the boards, which is how the next visit skips the name prompt. An unreadable profile counts as none.
-- **Boards** (`LocalStorageBoardRepository`, key `whiteboard.demo.boards`): a JSON array of boards, dates as ISO strings and inks as runs, re-normalized on read. Methods are `async`, so a storage error such as a full quota (browsers allow roughly 5 MB per origin) rejects and shows as a failed save. There are no Firestore rules here; the views' own limits (title length, content length) still apply. Like the rules, the repository rejects a blank title in `create` and `rename`, so both implementations agree on it.
+- **Boards** (`LocalStorageBoardRepository`, key `whiteboard.demo.boards`): a JSON array of boards, dates as ISO strings and inks as runs, re-normalized on read.
+- **Sample boards** (`SAMPLE_BOARDS` in `src/demo/sampleBoards.ts`, written as inked pieces of text and joined with `writingFromSegments`): `createBoardRepository` passes them to `LocalStorageBoardRepository` as seed boards. When the boards key is missing, the first read writes them (so their ids stay fixed from then on). Deleting every board stores `[]`, so they do not come back; `clearDemoBoards` removes the key, so someone new starting in the same browser gets them again. Methods are `async`, so a storage error such as a full quota (browsers allow roughly 5 MB per origin) rejects and shows as a failed save. There are no Firestore rules here; the views' own limits (title length, content length) still apply. Like the rules, the repository rejects a blank title in `create` and `rename`, so both implementations agree on it.
 - **Not covered**: a demo visitor cannot carry their boards into a Google account, and clearing site data deletes them. Demo writes still wait out the 500 ms save interval meant for Firestore, which is harmless.
 
 ## Local Development
@@ -225,6 +227,7 @@ Last updated 2026-10-29.
 - The app bar avatar shows the Google profile photo (it had always fallen back to the initial, because `v-avatar` ignores `image` when given a slot).
 - The seeded Dev User has a placeholder profile photo, so the avatar's photo can be checked locally; E2E tests cover the photo and the initial.
 - Demo mode's `LocalStorageBoardRepository` rejects blank titles, matching the Firestore rules.
+- A `/demo` link that goes straight into demo mode (as "Guest" on a first visit), and three sample boards for new demo visitors.
 
 **Next**
 - Enforce App Check for Cloud Firestore once the dashboard has shown nearly all traffic verified for a few days; then consider Authentication. Unenforcing in the console takes effect within minutes, with no deploy.

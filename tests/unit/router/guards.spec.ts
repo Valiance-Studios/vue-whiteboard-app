@@ -48,4 +48,22 @@ describe('sessionGuard', () => {
 
     expect(authStore.init).toHaveBeenCalledOnce();
   });
+
+  describe('the demo link', () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    it('starts demo mode as a guest on a first visit', async () => {
+      expect(await sessionGuard(routeTo('/demo', {startsDemo: true}))).toEqual({name: RouteName.BoardCollection});
+      expect(authStore.user).toMatchObject({kind: 'demo', displayName: 'Guest'});
+    });
+
+    it('keeps a signed-in Google session', async () => {
+      authStore.user = {uid: 'u1', kind: 'google', displayName: 'Test', email: null, photoURL: null};
+
+      expect(await sessionGuard(routeTo('/demo', {startsDemo: true}))).toEqual({name: RouteName.BoardCollection});
+      expect(authStore.user.kind).toBe('google');
+    });
+  });
 });

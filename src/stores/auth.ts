@@ -2,6 +2,7 @@ import type {SessionUser} from '@/types/session';
 import type {User} from 'firebase/auth';
 
 import {defineStore} from 'pinia';
+import {DEMO_GUEST_NAME} from '@/constants/demo';
 import {DemoProfileStorage} from '@/demo/DemoProfileStorage';
 import {auth} from '@/firebase';
 import {clearDemoBoards} from '@/repositories/LocalStorageBoardRepository';
@@ -162,6 +163,13 @@ export const useAuthStore = defineStore('auth', {
       this.user = toDemoSession(name);
 
       return true;
+    },
+
+    /** Starts demo mode without asking for a name, as for the demo link: under the saved name, or as a guest on a first visit. */
+    enterDemoAsGuest(): void {
+      if (!this.enterDemo()) {
+        this.enterDemo(DEMO_GUEST_NAME);
+      }
     },
 
     /** The name a returning demo visitor will be greeted with, or `null` on a first visit. */

@@ -70,6 +70,14 @@ export function decodeInks(encoded: string | undefined, length: number): InkRun[
   return normalizeInks(runs, length);
 }
 
+/** Joins pieces of inked text into writing, the reverse of `inkSegments`. */
+export function writingFromSegments(segments: readonly InkSegment[]): BoardWriting {
+  const content = segments.map((segment) => segment.text).join('');
+  const runs = segments.map((segment) => ({ink: segment.ink, length: segment.text.length}));
+
+  return {content, inks: normalizeInks(runs, content.length)};
+}
+
 /** Splits text into its pieces of each ink. */
 export function inkSegments(content: string, runs: readonly InkRun[]): InkSegment[] {
   const segments: InkSegment[] = [];
