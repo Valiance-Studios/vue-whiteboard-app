@@ -198,7 +198,7 @@ ESLint (flat config, `eslint.config.js`) with `typescript-eslint`, `eslint-plugi
 
 ## Project Status
 
-Last updated 2026-10-28.
+Last updated 2026-10-29.
 
 **Done**
 - Scaffolding, tooling (ESLint, Vitest, Playwright), and Firebase emulator setup.
@@ -216,11 +216,16 @@ Last updated 2026-10-28.
 - Demo Mode: a name-only session from the login page, with boards kept in `localStorage`; returning visitors go straight in.
 - Renaming and deleting boards, from the board cards and from the board page.
 - Light and dark themes, with a toggle in the app bar; follows the system setting until one is picked.
+- The marker icon as the tab icon, with PNG fallbacks.
+- The dev project is deployed and in use (`npm run deploy` after merging), with the allowlist in place.
+- App Check (reCAPTCHA Enterprise) in the client; the key is registered on the dev project and the dashboard shows Firestore and Authentication requests as verified. Not yet enforced.
+- A budget alert on the project's billing account: $75, alerting at 50%, 90% and 100%. Alerts only: it does not cap spending.
+- `npm run emulators` stops cleanly when the terminal running it closes (SIGHUP).
+- `npm audit` at 0, with `overrides` for three nested dependencies (see Known Quirks).
 
 **Next**
-- First manual deploy (`npm run deploy`) once `.env.production.local` exists and the allowlist has an entry for you, then a sign-in smoke test on the hosted URL.
-- App Check console setup and rollout on the dev project (see "App Check": create the key, register the app, deploy, monitor, then enforce for Firestore).
-- A budget alert on the project's billing account.
+- Enforce App Check for Cloud Firestore once the dashboard has shown nearly all traffic verified for a few days; then consider Authentication. Unenforcing in the console takes effect within minutes, with no deploy.
 
 **Later**
-- Real Firebase project config, once created (`.env.local`, from `.env.example`).
+- Sketch mode with mouse, touch and pen, as a stretch goal: tracked in GitHub issue #20, with the work in PRs #17 (fixed board layout) and #19 (sketch mode). On hold because the fixed layout makes the writing too small on phones; #20 lists the options.
+- A production Firebase project, if wanted: another alias in `.firebaserc` and another `.env` file (see Deployment).
