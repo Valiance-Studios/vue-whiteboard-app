@@ -1,6 +1,21 @@
+import type {Locator} from '@playwright/test';
+
 import {expect, test} from '@playwright/test';
 import {signIn} from './support/auth';
 import {boardLines, boardText, createBoard, inkedText, marker, saveStatus, writeOnBoard} from './support/boards';
+
+type Box = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
+
+/** Where an element is on the page; it must be visible. */
+async function boundingBox(locator: Locator): Promise<Box> {
+  const box = await locator.boundingBox();
+
+  if (!box) {
+    throw new Error('Expected the element to be visible');
+  }
+
+  return box;
+}
 
 test.describe('board editing', () => {
   test.beforeEach(async ({page}) => {
@@ -123,5 +138,20 @@ test.describe('board editing', () => {
 
     const pageScrolls = await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight);
     expect(pageScrolls).toBe(false);
+  });
+
+  test('keeps the marker tray to one compact row on a phone', async ({page}) => {
+    await page.setViewportSize({width: 360, height: 640});
+    await createBoard(page, 'Pocket Board');
+
+    const tray = await boundingBox(page.locator('.marker-tray'));
+    expect(tray.height).toBeLessThan(100);
+
+    // Every marker sits inside the tray, none pushed past its right edge or onto another row.
+    for (const name of ['Black', 'Blue', 'Red', 'Green', 'Purple', 'Orange']) {
+      const box = await boundingBox(marker(page, name));
+      expect(box.x + box.width).toBeLessThanOrEqual(tray.x + tray.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(tray.y + tray.height);
+    }
   });
 });

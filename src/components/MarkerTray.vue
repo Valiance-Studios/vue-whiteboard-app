@@ -82,18 +82,53 @@ export default defineComponent({
     color: #2c3440;
   }
 
+  // Always one row: where it does not fit beside the label, it takes its own row and the barrels shrink to fit.
   &__markers {
     display: flex;
-    flex-wrap: wrap;
     align-items: flex-end;
     gap: 14px;
+    min-width: 0;
     margin-left: auto;
+  }
+
+  // Phones: smaller markers and a slimmer label row, so the tray leaves the board most of the height.
+  @media (max-width: 599.98px) {
+    gap: 2px;
+    padding: 8px 12px 4px;
+
+    &__label {
+      font-size: 0.75rem;
+    }
+
+    &__markers {
+      gap: 4px;
+    }
+
+    .marker {
+      --cap-width: 16px;
+      --cap-height: 20px;
+      --barrel-height: 16px;
+      --tip-width: 5px;
+      --tip-height: 9px;
+      --lift: 6px;
+
+      padding: 0 2px;
+    }
   }
 }
 
+// Sized by custom properties, so the tray can shrink the markers on phones.
 .marker {
+  --cap-width: 30px;
+  --cap-height: 26px;
+  --barrel-height: 22px;
+  --tip-width: 8px;
+  --tip-height: 12px;
+  --lift: 10px;
+
   display: flex;
   align-items: center;
+  min-width: 0;
   min-height: 44px;
   padding: 0 4px;
   border: 0;
@@ -115,28 +150,32 @@ export default defineComponent({
   // The marker in hand is lifted off the ledge.
   &--selected,
   &--selected:hover {
-    transform: translateY(-10px);
+    transform: translateY(calc(-1 * var(--lift)));
     filter: drop-shadow(0 6px 4px rgb(28 35 48 / 30%));
   }
 
   &__cap {
-    width: 30px;
-    height: 26px;
+    flex-shrink: 0;
+    width: var(--cap-width);
+    height: var(--cap-height);
     border-radius: 6px 3px 3px 6px;
     background: var(--marker-color);
   }
 
   &__barrel {
+    // The only part that shrinks when the tray is narrow.
     width: 64px;
-    height: 22px;
+    min-width: 16px;
+    height: var(--barrel-height);
     border-radius: 3px 8px 8px 3px;
     background: #f7f8fa;
     box-shadow: inset 0 -3px 0 rgb(28 35 48 / 8%);
   }
 
   &__tip {
-    width: 8px;
-    height: 12px;
+    flex-shrink: 0;
+    width: var(--tip-width);
+    height: var(--tip-height);
     border-radius: 0 4px 4px 0;
     background: var(--marker-color);
   }
