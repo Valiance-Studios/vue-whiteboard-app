@@ -48,6 +48,7 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - Writes to a board are kept at least 500 ms apart (`BOARD_MIN_SAVE_INTERVAL_MS`), counted from when the previous write was acknowledged, because the rules reject writes that come closer together. Usually only a save of text typed during the previous save waits.
    - Pending writing is flushed by the in-component route guards (and on unmount), so navigating away never loses an edit. Closing the tab mid-pause can still lose the last keystrokes; there is no `beforeunload` prompt.
    - A status next to the title reads "Saving…", "All changes saved", or an error with a Retry button. It stays empty on a board the user only reads.
+   - The title, status and delete button share one row at every width: a long title wraps its own text. On phones the title is smaller (1.5rem, and the rename field matches) and the status shows only its icon; its text stays in the `role="status"` element for screen readers and is the tooltip.
    - Note that a Firestore write made while offline stays pending rather than failing, so the status reads "Saving…" until the connection returns; the error state is for rejected writes, such as a board that was deleted.
    - Do not worry about supporting free writing/drawing with the mouse or a touch screen for now.
 
@@ -234,6 +235,7 @@ Last updated 2026-10-30.
 - An About dialog in the app bar, on every page, linking to the public repository.
 - On the Single Board View, the board and marker tray stay fixed on screen and the writing scrolls inside the board.
 - A compact marker tray on phones and tablets: six markers on one row, shrinking to fit.
+- A one-row board header on phones: a smaller title, with an icon-only save status and the delete button beside it.
 - The repository is public, with a `README.md` for visitors (live demo link, screenshot, features, highlights, local setup) that points here for depth. Its screenshot is `docs/screenshots/boards.png`, taken from `/demo` against the local dev server; retake it when the collection view changes noticeably.
 
 **Next**

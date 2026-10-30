@@ -38,7 +38,7 @@
         />
         <h1
           v-else
-          class="text-h4 ma-0"
+          class="board-view__heading text-h4 ma-0"
         >
           <button
             type="button"
@@ -59,13 +59,14 @@
           v-if="saveStatus"
           class="board-view__status text-body-2"
           role="status"
+          :title="saveStatus.text"
         >
           <v-icon
             :icon="saveStatus.icon"
             :color="saveStatus.color"
             size="small"
           />
-          <span :class="saveStatus.textClass">{{ saveStatus.text }}</span>
+          <span :class="['board-view__status-text', saveStatus.textClass]">{{ saveStatus.text }}</span>
           <v-btn
             v-if="saveFailed"
             variant="text"
@@ -81,6 +82,7 @@
           icon="mdi-trash-can-outline"
           variant="text"
           :aria-label="`Delete ${board.title}`"
+          class="board-view__delete"
           :class="{'board-view__delete--alone': !saveStatus}"
           @click="deleteDialogOpen = true"
         />
@@ -449,6 +451,8 @@ export default defineComponent({
 </script>
 
 <style lang="scss" scoped>
+$phone-title-size: 1.5rem;
+
 // Exactly fills the window under the app bar, so the board fits on screen and scrolls its own writing.
 // `--v-layout-top` is the app bar's height, set by Vuetify on `v-main`.
 .board-view {
@@ -461,24 +465,61 @@ export default defineComponent({
     margin-left: -12px;
   }
 
+  // One row: a long title wraps its own text, so the status and delete button stay across from it.
   &__header {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 8px 16px;
+    gap: 16px;
+  }
+
+  &__heading {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   &__status {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
     gap: 6px;
     margin-left: auto;
+  }
+
+  // Phones: a smaller title, and a status showing only its icon, so both fit on one row and leave the board the screen.
+  // The status text is still read out and shown on hover.
+  @media (max-width: 599.98px) {
+    &__header {
+      gap: 8px;
+    }
+
+    // `!important` to beat Vuetify's `text-h4` utility, which uses it.
+    &__heading {
+      font-size: $phone-title-size !important;
+      line-height: 1.25 !important;
+    }
+
+    &__title-field :deep(input) {
+      font-size: $phone-title-size;
+    }
+
+    &__status-text {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
   }
 
   // Takes the rest of the height. On a very short window it keeps enough board to write on, and the page scrolls instead.
   &__sheet {
     flex: 1 1 auto;
     min-height: 18rem;
+  }
+
+  &__delete {
+    flex-shrink: 0;
   }
 
   // Keeps the delete button across from the title when there is no save status to push it there.

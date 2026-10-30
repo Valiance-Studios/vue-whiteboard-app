@@ -140,9 +140,19 @@ test.describe('board editing', () => {
     expect(pageScrolls).toBe(false);
   });
 
-  test('keeps the marker tray to one compact row on a phone', async ({page}) => {
+  test('keeps the board header and marker tray compact on a phone', async ({page}) => {
     await page.setViewportSize({width: 360, height: 640});
     await createBoard(page, 'Pocket Board');
+    await writeOnBoard(page, 'Hi');
+    await expect(saveStatus(page)).toContainText('All changes saved');
+
+    // The status and delete button stay beside the title rather than wrapping under it.
+    const heading = await boundingBox(page.getByRole('heading', {name: 'Pocket Board'}));
+
+    for (const control of [saveStatus(page), page.getByRole('button', {name: 'Delete Pocket Board'})]) {
+      const box = await boundingBox(control);
+      expect(box.y).toBeLessThan(heading.y + heading.height);
+    }
 
     const tray = await boundingBox(page.locator('.marker-tray'));
     expect(tray.height).toBeLessThan(100);
