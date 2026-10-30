@@ -6,11 +6,14 @@ declare module 'vue-router' {
     requiresAuth?: boolean;
     /** Route is only for users without a session (e.g. login); authenticated users are sent to the boards view. */
     guestOnly?: boolean;
+    /** Route starts demo mode for users without a session, then sends everyone to the boards view. */
+    startsDemo?: boolean;
   }
 }
 
 export enum RouteName {
   Login = 'login',
+  Demo = 'demo',
   BoardCollection = 'board-collection',
   Board = 'board',
 }
@@ -25,6 +28,13 @@ export const routes: RouteRecordRaw[] = [
     name: RouteName.Login,
     component: () => import('@/views/LoginView.vue'),
     meta: {guestOnly: true},
+  },
+  {
+    // A link straight into the app, e.g. for a resume. The guard always redirects, so the component never shows.
+    path: '/demo',
+    name: RouteName.Demo,
+    component: () => import('@/views/LoginView.vue'),
+    meta: {startsDemo: true},
   },
   {
     path: '/boards',

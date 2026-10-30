@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {decodeInks, encodeInks, inkSegments, isSameWriting, normalizeInks} from '@/utils/inks';
+import {decodeInks, encodeInks, inkSegments, isSameWriting, normalizeInks, writingFromSegments} from '@/utils/inks';
 
 describe('normalizeInks', () => {
   it('joins neighbours of the same ink and drops empty runs', () => {
@@ -59,5 +59,18 @@ describe('isSameWriting', () => {
     expect(isSameWriting(writing, {content: 'Hi', inks: [{ink: 'red', length: 2}]})).toBe(true);
     expect(isSameWriting(writing, {content: 'Hi', inks: [{ink: 'blue', length: 2}]})).toBe(false);
     expect(isSameWriting(writing, {content: 'Ho', inks: [{ink: 'red', length: 2}]})).toBe(false);
+  });
+});
+
+describe('writingFromSegments', () => {
+  it('joins the text and gives each piece its ink, merging neighbours of the same ink', () => {
+    expect(writingFromSegments([{text: 'Hi ', ink: 'red'}, {text: 'there', ink: 'red'}, {text: '!', ink: 'green'}]))
+      .toEqual({content: 'Hi there!', inks: [{ink: 'red', length: 8}, {ink: 'green', length: 1}]});
+  });
+
+  it('is the reverse of inkSegments', () => {
+    const writing = {content: 'Hello world', inks: [{ink: 'blue' as const, length: 6}, {ink: 'red' as const, length: 5}]};
+
+    expect(writingFromSegments(inkSegments(writing.content, writing.inks))).toEqual(writing);
   });
 });

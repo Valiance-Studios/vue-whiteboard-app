@@ -1,11 +1,18 @@
+import type {SeedBoard} from '@/types/board';
+
 import {beforeEach, describe, expect, it, vi} from 'vitest';
-import {LocalStorageBoardRepository} from '@/repositories/LocalStorageBoardRepository';
+import {clearDemoBoards, LocalStorageBoardRepository} from '@/repositories/LocalStorageBoardRepository';
 
 const BOARDS_KEY = 'whiteboard.demo.boards';
 
-function repository(): LocalStorageBoardRepository {
+const SEED_BOARDS: SeedBoard[] = [
+  {title: 'Welcome', content: 'Hi there', inks: [{ink: 'blue', length: 3}, {ink: 'red', length: 5}]},
+  {title: 'Plans', content: '', inks: []},
+];
+
+function repository(seedBoards: SeedBoard[] = []): LocalStorageBoardRepository {
   // A new instance per call, as `createBoardRepository` makes them.
-  return new LocalStorageBoardRepository(localStorage, 'demo');
+  return new LocalStorageBoardRepository(localStorage, 'demo', seedBoards);
 }
 
 describe('LocalStorageBoardRepository', () => {
@@ -105,5 +112,45 @@ describe('LocalStorageBoardRepository', () => {
     localStorage.setItem(BOARDS_KEY, JSON.stringify(stored));
 
     await expect(repository().get(id)).resolves.toMatchObject({inks: [{ink: 'blue', length: 2}]});
+  });
+
+  describe('seed boards', () => {
+    it('starts storage that has never held boards with them', async () => {
+      const boards = await repository(SEED_BOARDS).list();
+
+      expect(boards).toMatchObject([
+        {title: 'Welcome', titleSearchable: 'welcome', content: 'Hi there', inks: SEED_BOARDS[0]?.inks},
+        {title: 'Plans', content: ''},
+      ]);
+      expect(boards[0]?.createdAt.uid).toBe('demo');
+    });
+
+    it('keeps their ids from one read to the next', async () => {
+      const [first] = await repository(SEED_BOARDS).list();
+
+      await expect(repository(SEED_BOARDS).get(first?.id ?? '')).resolves.toMatchObject({title: 'Welcome'});
+    });
+
+    it('does not bring them back once every board is deleted', async () => {
+      for (const board of await repository(SEED_BOARDS).list()) {
+        await repository(SEED_BOARDS).delete(board.id);
+      }
+
+      await expect(repository(SEED_BOARDS).list()).resolves.toEqual([]);
+    });
+
+    it('adds them back after the demo boards are cleared', async () => {
+      await repository(SEED_BOARDS).create({title: 'Mine'});
+
+      clearDemoBoards(localStorage);
+
+      expect((await repository(SEED_BOARDS).list()).map((board) => board.title)).toEqual(['Welcome', 'Plans']);
+    });
+
+    it('are not added to storage that already holds boards', async () => {
+      await repository().create({title: 'Mine'});
+
+      expect((await repository(SEED_BOARDS).list()).map((board) => board.title)).toEqual(['Mine']);
+    });
   });
 });

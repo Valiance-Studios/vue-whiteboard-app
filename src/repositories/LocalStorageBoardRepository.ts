@@ -1,4 +1,4 @@
-import type {AuditStamp, Board, BoardUpdateInput, InkRun, NewBoardInput} from '@/types/board';
+import type {AuditStamp, Board, BoardUpdateInput, InkRun, NewBoardInput, SeedBoard} from '@/types/board';
 import type {BoardRepository} from './BoardRepository';
 
 import {normalizeInks} from '@/utils/inks';
@@ -22,7 +22,7 @@ interface StoredBoard {
   updatedAt: StoredAuditStamp;
 }
 
-/** Deletes every demo board in this storage, e.g. when someone new starts demo mode in the same browser. */
+/** Deletes every demo board in this storage, e.g. when someone new starts demo mode in the same browser. The next read starts from the seed boards again. */
 export function clearDemoBoards(storage: Storage): void {
   storage.removeItem(BOARDS_KEY);
 }
@@ -56,20 +56,56 @@ function toBoard(stored: StoredBoard): Board {
  *
  * Every call reads and writes the whole stored list rather than caching it, as `createBoardRepository`
  * requires. Demo data belongs to one visitor, so no owner checks are needed.
+ *
+ * Storage that has never held boards starts with `seedBoards`, written on first read so their ids stay
+ * the same from then on. Deleting every board stores an empty list, so the seed boards do not come back.
  */
 export class LocalStorageBoardRepository implements BoardRepository {
   private readonly storage: Storage;
   private readonly uid: string;
+  private readonly seedBoards: readonly SeedBoard[];
 
-  constructor(storage: Storage, uid: string) {
+  constructor(storage: Storage, uid: string, seedBoards: readonly SeedBoard[] = []) {
     this.storage = storage;
     this.uid = uid;
+    this.seedBoards = seedBoards;
   }
 
   private read(): StoredBoard[] {
-    const boards: unknown = JSON.parse(this.storage.getItem(BOARDS_KEY) ?? '[]');
+    const stored = this.storage.getItem(BOARDS_KEY);
+
+    if (stored === null) {
+      return this.seed();
+    }
+
+    const boards: unknown = JSON.parse(stored);
 
     return Array.isArray(boards) ? boards as StoredBoard[] : [];
+  }
+
+  private seed(): StoredBoard[] {
+    const boards = this.seedBoards.map((board) => this.toStoredBoard(board));
+
+    if (boards.length > 0) {
+      this.write(boards);
+    }
+
+    return boards;
+  }
+
+  private toStoredBoard(board: SeedBoard): StoredBoard {
+    const title = toTitle(board.title);
+    const stamp = this.stamp();
+
+    return {
+      id: crypto.randomUUID(),
+      title,
+      titleSearchable: toSearchable(title),
+      content: board.content,
+      inks: normalizeInks(board.inks, board.content.length),
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
   }
 
   /** Throws if storage is full, which surfaces as a failed save. */
@@ -93,13 +129,11 @@ export class LocalStorageBoardRepository implements BoardRepository {
   }
 
   async create(input: NewBoardInput): Promise<string> {
-    const title = toTitle(input.title);
-    const stamp = this.stamp();
-    const id = crypto.randomUUID();
+    const board = this.toStoredBoard({title: input.title, content: '', inks: []});
 
-    this.write([...this.read(), {id, title, titleSearchable: toSearchable(title), content: '', inks: [], createdAt: stamp, updatedAt: stamp}]);
+    this.write([...this.read(), board]);
 
-    return id;
+    return board.id;
   }
 
   /** The board with this id in `boards`, which writes to it change. Throws for a missing board, as Firestore would. */

@@ -161,6 +161,24 @@ describe('auth store: demo mode', () => {
     expect(store.user?.kind).toBe('demo');
   });
 
+  it('enters as a guest from the demo link on a first visit, without asking for a name', () => {
+    const store = useAuthStore();
+
+    store.enterDemoAsGuest();
+
+    expect(store.user).toMatchObject({kind: 'demo', displayName: 'Guest'});
+  });
+
+  it('enters under the saved name from the demo link on a return visit', async () => {
+    const store = useAuthStore();
+    store.enterDemo('Grace');
+    await store.signOut();
+
+    store.enterDemoAsGuest();
+
+    expect(store.user?.displayName).toBe('Grace');
+  });
+
   it('greets a returning visitor by their saved name', async () => {
     const store = useAuthStore();
     expect(store.savedDemoName()).toBeNull();
