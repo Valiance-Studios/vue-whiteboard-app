@@ -4,10 +4,12 @@
     :style="{'--marker-color': inkColor}"
   >
     <div class="whiteboard-sheet__board">
-      <editor-content
-        v-if="editor"
-        :editor="editor"
-      />
+      <div class="whiteboard-sheet__writing">
+        <editor-content
+          v-if="editor"
+          :editor="editor"
+        />
+      </div>
     </div>
 
     <marker-tray
@@ -99,6 +101,7 @@ export default defineComponent({
 <style lang="scss" scoped>
 @use '@/styles/board';
 
+// Fills the height its parent gives it. The frame and tray stay put; only the writing scrolls.
 .whiteboard-sheet {
   display: flex;
   flex-direction: column;
@@ -110,9 +113,11 @@ export default defineComponent({
     border-bottom-width: 0;
     border-radius: 12px 12px 0 0;
     position: relative;
-    padding: 16px 28px 28px;
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
 
-    // The sheen left on a board that has been wiped clean.
+    // The sheen left on a board that has been wiped clean. On the frame, so it stays put while the writing scrolls.
     &::before {
       content: '';
       position: absolute;
@@ -122,10 +127,25 @@ export default defineComponent({
     }
   }
 
-  // Positioned so the writing sits above the sheen.
-  :deep(.ProseMirror) {
+  // Positioned so the writing sits above the sheen. A column, so the editor can stretch to fill it.
+  &__writing {
     position: relative;
-    min-height: 40rem;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    padding: 16px 28px 28px;
+    overflow-y: auto;
+
+    > :deep(div) {
+      display: flex;
+      flex: 1 0 auto;
+      flex-direction: column;
+    }
+  }
+
+  // Stretched to the bottom of the board, so clicking anywhere on it puts the caret in the writing.
+  :deep(.ProseMirror) {
+    flex: 1 0 auto;
     font-family: board.$marker-font;
     font-size: 1.5rem;
     line-height: 2.5rem;

@@ -109,4 +109,19 @@ test.describe('board editing', () => {
     await expect(preview).toHaveText(['Plain ', 'fancy']);
     await expect(preview.nth(1)).toHaveCSS('color', 'rgb(91, 42, 134)');
   });
+
+  test('scrolls long writing inside the board, keeping the board and tray in place', async ({page}) => {
+    await createBoard(page, 'Long List');
+    const lines = Array.from({length: 60}, (_, index) => `Line ${index + 1}`);
+    await writeOnBoard(page, lines.join('\n'));
+
+    // The caret is on the last line, so the writing has scrolled down to it.
+    await expect(boardLines(page).last()).toBeInViewport();
+    await expect(boardLines(page).first()).not.toBeInViewport();
+    await expect(page.getByRole('heading', {name: 'Long List'})).toBeInViewport();
+    await expect(marker(page, 'Black')).toBeInViewport();
+
+    const pageScrolls = await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight);
+    expect(pageScrolls).toBe(false);
+  });
 });

@@ -40,6 +40,7 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - **Deleting**: a trash button across from the title, after a confirmation. It drops any unsaved writing, lets a save already running finish, deletes the board and returns to the collection.
    - `save()` returns the save in progress (`runningSave`) instead of returning at once when one is running, so renaming, deleting and leaving the board can all wait for it.
    - `WhiteboardSheet` is styled to resemble a physical dry-erase board (aluminium frame, glossy sheen) with a marker font. The font stack uses faces already installed on macOS and Windows, so the board needs no web font.
+   - **Fixed board, scrolling writing**: the view exactly fills the window under the app bar (`100dvh` minus Vuetify's `--v-layout-top`), and the sheet takes the height left under the header. The frame, sheen and marker tray stay in place; only the writing inside the frame scrolls (`whiteboard-sheet__writing`), and the editor stretches to the bottom of the board so clicking anywhere on it places the caret. On a window too short for an 18rem board, the page scrolls instead. The writing keeps its font size; this is not the scaled fixed-size board of PR #17.
    - **Marker tray** (`MarkerTray`): an aluminium ledge under the board holding six markers (black, blue, red, green, purple, orange; `src/constants/markers.ts`). The marker in hand is lifted and named ("Marker · Red"). Picking one recolors the selected text, if any, and colors everything written from then on, so a board can mix colors. Each visit starts with blue.
    - **Editor**: a Tiptap editor limited to plain lines of colored text (`src/editor/`: document, paragraph, text, the `Ink` mark, undo/redo, placeholder, `ContentLimit`). There is no bold, headings or lists. Tiptap's document format stays inside `WhiteboardSheet` and `src/editor/`: the sheet takes and emits a `BoardWriting` (`content` plus ink runs), so the rest of the app never sees it.
    - The `Ink` mark's plugin keeps the current ink in ProseMirror's stored marks after every change, so typing anywhere, even inside text of another color, writes in the marker in hand. Pasted and dropped text is recolored to it. Text a change brings in with no ink at all (ProseMirror reads some typing back from the DOM, e.g. typing over a select-all, which skips stored marks) gets it as well, so no text is ever uncolored. Undo restores the earlier colors.
@@ -202,7 +203,7 @@ ESLint (flat config, `eslint.config.js`) with `typescript-eslint`, `eslint-plugi
 
 ## Project Status
 
-Last updated 2026-10-29.
+Last updated 2026-10-30.
 
 **Done**
 - Scaffolding, tooling (ESLint, Vitest, Playwright), and Firebase emulator setup.
@@ -231,6 +232,7 @@ Last updated 2026-10-29.
 - Demo mode's `LocalStorageBoardRepository` rejects blank titles, matching the Firestore rules.
 - A `/demo` link that goes straight into demo mode (as "Guest" on a first visit), and three sample boards for new demo visitors.
 - An About dialog in the app bar, on every page, linking to the public repository.
+- On the Single Board View, the board and marker tray stay fixed on screen and the writing scrolls inside the board.
 - The repository is public, with a `README.md` for visitors (live demo link, screenshot, features, highlights, local setup) that points here for depth. Its screenshot is `docs/screenshots/boards.png`, taken from `/demo` against the local dev server; retake it when the collection view changes noticeably.
 
 **Next**
