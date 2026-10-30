@@ -14,6 +14,10 @@ A whiteboard app for jotting down notes in colored markers, with each user's boa
 - **Light and dark themes**: follows the system setting until you pick one.
 - **Demo mode**: try the app without signing in, from the login page or the `/demo` link. New visitors start with sample boards.
 
+## On the Horizon
+
+- **Sketching**: drawing on the boards with a mouse or by touch, alongside the writing ([#20](https://github.com/Valiance-Studios/vue-whiteboard-app/issues/20)).
+
 ## Engineering Highlights
 
 - **Owner-only Firestore security rules**, covered by their own test suite against the Firestore emulator. Rules also cap board size and limit how often one board can be written.

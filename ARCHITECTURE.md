@@ -50,7 +50,9 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - Note that a Firestore write made while offline stays pending rather than failing, so the status reads "Saving…" until the connection returns; the error state is for rejected writes, such as a board that was deleted.
    - Do not worry about supporting free writing/drawing with the mouse or a touch screen for now.
 
-Every page shares an app bar with the marker logo on the left and the theme toggle on the right. Once signed in, the toggle is followed by the user's Google photo (or initial, when the account has no photo) and name, a "Demo" chip in demo mode, and Sign out. On phones the name is hidden and Sign out shows only its icon (keeping "Sign out" as its accessible name), so the title is not squeezed out.
+Every page shares an app bar with the marker logo on the left and, on the right, an About button and the theme toggle. Once signed in, the toggle is followed by the user's Google photo (or initial, when the account has no photo) and name, a "Demo" chip in demo mode, and Sign out. On phones the name is hidden, Sign out shows only its icon (keeping "Sign out" as its accessible name) at icon width, and the title is slightly smaller, so the whole title still fits at 360px wide.
+
+The About button (`AboutDialog`, labelled "About this app") opens a short explanation for visitors such as recruiters: what the app is, a few engineering highlights, the tech stack, and a link to the public GitHub repository. Usage help lives on the "A Quick Tour" sample board instead (see "Demo Mode"), so the dialog does not repeat it. Its text is a shorter version of `README.md`; keep the two consistent when either changes. Both have an "On the Horizon" section naming planned features (currently sketch mode, under "Later" in Project Status), so update them when those plans change.
 
 `/` redirects to `/boards`. Routes requiring a session are flagged with `meta.requiresAuth`. `/demo` (`meta.startsDemo`) always redirects to `/boards`, starting demo mode first if there is no session (see "Demo Mode").
 
@@ -228,11 +230,12 @@ Last updated 2026-10-29.
 - The seeded Dev User has a placeholder profile photo, so the avatar's photo can be checked locally; E2E tests cover the photo and the initial.
 - Demo mode's `LocalStorageBoardRepository` rejects blank titles, matching the Firestore rules.
 - A `/demo` link that goes straight into demo mode (as "Guest" on a first visit), and three sample boards for new demo visitors.
+- An About dialog in the app bar, on every page, linking to the public repository.
 - The repository is public, with a `README.md` for visitors (live demo link, screenshot, features, highlights, local setup) that points here for depth. Its screenshot is `docs/screenshots/boards.png`, taken from `/demo` against the local dev server; retake it when the collection view changes noticeably.
 
 **Next**
 - Enforce App Check for Cloud Firestore once the dashboard has shown nearly all traffic verified for a few days; then consider Authentication. Unenforcing in the console takes effect within minutes, with no deploy.
 
 **Later**
-- Sketch mode with mouse, touch and pen, as a stretch goal: tracked in GitHub issue #20, with the work in PRs #17 (fixed board layout) and #19 (sketch mode). On hold because the fixed layout makes the writing too small on phones; #20 lists the options.
+- Sketch mode with mouse, touch and pen, as a stretch goal (listed under "On the Horizon" in the README and About dialog): tracked in GitHub issue #20, with the work in PRs #17 (fixed board layout) and #19 (sketch mode). On hold because the fixed layout makes the writing too small on phones; #20 lists the options.
 - A production Firebase project, if wanted: another alias in `.firebaserc` and another `.env` file (see Deployment).
