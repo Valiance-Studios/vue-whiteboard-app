@@ -228,6 +228,7 @@ Last updated 2026-10-29.
 - The seeded Dev User has a placeholder profile photo, so the avatar's photo can be checked locally; E2E tests cover the photo and the initial.
 - Demo mode's `LocalStorageBoardRepository` rejects blank titles, matching the Firestore rules.
 - A `/demo` link that goes straight into demo mode (as "Guest" on a first visit), and three sample boards for new demo visitors.
+- The repository is public, with a `README.md` for visitors (live demo link, screenshot, features, highlights, local setup) that points here for depth. Its screenshot is `docs/screenshots/boards.png`, taken from `/demo` against the local dev server; retake it when the collection view changes noticeably.
 
 **Next**
 - Enforce App Check for Cloud Firestore once the dashboard has shown nearly all traffic verified for a few days; then consider Authentication. Unenforcing in the console takes effect within minutes, with no deploy.
