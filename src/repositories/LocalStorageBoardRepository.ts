@@ -31,6 +31,17 @@ function toAuditStamp(stamp: StoredAuditStamp): AuditStamp {
   return {uid: stamp.uid, time: new Date(stamp.time)};
 }
 
+/** The trimmed title. Throws for a blank one, as Firestore's rules would. */
+function toTitle(title: string): string {
+  const trimmed = title.trim();
+
+  if (!trimmed) {
+    throw new Error('A board title cannot be blank.');
+  }
+
+  return trimmed;
+}
+
 function toBoard(stored: StoredBoard): Board {
   return {
     ...stored,
@@ -82,7 +93,7 @@ export class LocalStorageBoardRepository implements BoardRepository {
   }
 
   async create(input: NewBoardInput): Promise<string> {
-    const title = input.title.trim();
+    const title = toTitle(input.title);
     const stamp = this.stamp();
     const id = crypto.randomUUID();
 
@@ -115,7 +126,7 @@ export class LocalStorageBoardRepository implements BoardRepository {
   async rename(id: string, title: string): Promise<void> {
     const boards = this.read();
     const board = this.find(boards, id);
-    const trimmed = title.trim();
+    const trimmed = toTitle(title);
 
     board.title = trimmed;
     board.titleSearchable = toSearchable(trimmed);
