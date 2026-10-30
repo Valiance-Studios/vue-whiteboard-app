@@ -6,6 +6,7 @@ import {allowEmail} from '../../../scripts/emulator-admin.ts';
 export interface TestUser {
   email: string;
   displayName: string;
+  photoUrl?: string;
 }
 
 const POPUP_CLOSE_TIMEOUT_MS = 5_000;
@@ -34,6 +35,10 @@ async function attemptPopupSignIn(page: Page, user: TestUser): Promise<void> {
   // The emulator's inputs have no accessible names (broken aria-labelledby), so select by id.
   await popup.locator('#email-input').fill(user.email);
   await popup.locator('#display-name-input').fill(user.displayName);
+
+  if (user.photoUrl) {
+    await popup.locator('#profile-photo-input').fill(user.photoUrl);
+  }
 
   const closed = popup.waitForEvent('close', {timeout: POPUP_CLOSE_TIMEOUT_MS});
   await popup.getByRole('button', {name: 'Sign in with Google.com'}).click();

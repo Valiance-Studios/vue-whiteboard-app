@@ -13,7 +13,14 @@ import {loadEnv} from 'vite';
 export interface EmulatorAccount {
   email: string;
   displayName: string;
+  photoUrl?: string;
 }
+
+/**
+ * A profile photo for emulator accounts, as a data URL so it loads without a network or a file
+ * served by the app (and so never ships with it).
+ */
+export const PLACEHOLDER_PHOTO_URL = `data:image/svg+xml;base64,${readFileSync(new URL('assets/placeholder-photo.svg', import.meta.url)).toString('base64')}`;
 
 interface EmulatorPorts {
   auth: number;
@@ -78,7 +85,7 @@ export async function allowEmail(email: string): Promise<void> {
  */
 export async function createGoogleAccount(account: EmulatorAccount): Promise<void> {
   // The Auth emulator accepts an unsigned ID token: just the claims, as JSON.
-  const idToken = JSON.stringify({sub: account.email, email: account.email, email_verified: true, name: account.displayName});
+  const idToken = JSON.stringify({sub: account.email, email: account.email, email_verified: true, name: account.displayName, picture: account.photoUrl});
   const url = `http://127.0.0.1:${ports.auth}/identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${env.VITE_FIREBASE_API_KEY}`;
   const body = {
     requestUri: 'http://localhost',
