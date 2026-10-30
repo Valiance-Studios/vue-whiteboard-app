@@ -5,7 +5,7 @@
       flat
       border="b"
     >
-      <v-app-bar-title>
+      <v-app-bar-title class="app-bar-title">
         <router-link
           :to="{name: boardCollectionRoute}"
           class="app-title"
@@ -18,8 +18,9 @@
         </router-link>
       </v-app-bar-title>
 
-      <!-- The theme toggle is always at the right edge; once signed in, the account controls follow it. -->
+      <!-- About and the theme toggle are always at the right edge; once signed in, the account controls follow them. -->
       <template #append>
+        <about-dialog />
         <theme-toggle :class="{'me-2': authStore.user}" />
 
         <template v-if="authStore.user">
@@ -28,7 +29,7 @@
             color="primary"
             variant="tonal"
             size="32"
-            class="me-3"
+            class="me-2 me-sm-3"
           >
             <!-- Google's photo host can refuse requests that send a referrer. -->
             <v-img
@@ -78,6 +79,7 @@
 <script lang="ts">
 import {defineComponent} from 'vue';
 import {mapStores} from 'pinia';
+import AboutDialog from '@/components/AboutDialog.vue';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import {useAuthStore} from '@/stores/auth';
 import {useBoardsStore} from '@/stores/boards';
@@ -87,6 +89,7 @@ export default defineComponent({
   name: 'App',
 
   components: {
+    AboutDialog,
     ThemeToggle,
   },
 
@@ -122,10 +125,26 @@ export default defineComponent({
 </script>
 
 <style lang="scss" scoped>
-// With its text hidden on phones, the button keeps only the icon, so drop the gap left for the text.
+// Phones: room for the title beside About, the theme toggle and the account controls.
+// Sign out keeps only its icon, so it drops the gap left for the text and the minimum width meant for a text button.
 @media (max-width: 599.98px) {
-  .app-sign-out :deep(.v-btn__prepend) {
-    margin-inline: 0;
+  // A smaller title, closer to the edge, so it fits beside the buttons at full length.
+  .app-bar-title {
+    margin-inline-start: 8px;
+    font-size: 1.125rem;
+
+    .app-title {
+      gap: 4px;
+    }
+  }
+
+  .app-sign-out {
+    min-width: 0;
+    padding-inline: 8px;
+
+    :deep(.v-btn__prepend) {
+      margin-inline: 0;
+    }
   }
 }
 
