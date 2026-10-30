@@ -94,6 +94,7 @@
 
       <whiteboard-sheet
         :key="board.id"
+        class="board-view__sheet"
         :writing="board"
         @change="onWritingChange"
       />
@@ -448,8 +449,15 @@ export default defineComponent({
 </script>
 
 <style lang="scss" scoped>
+// Exactly fills the window under the app bar, so the board fits on screen and scrolls its own writing.
+// `--v-layout-top` is the app bar's height, set by Vuetify on `v-main`.
 .board-view {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--v-layout-top, 0px));
+
   &__back {
+    align-self: flex-start;
     margin-left: -12px;
   }
 
@@ -465,6 +473,12 @@ export default defineComponent({
     align-items: center;
     gap: 6px;
     margin-left: auto;
+  }
+
+  // Takes the rest of the height. On a very short window it keeps enough board to write on, and the page scrolls instead.
+  &__sheet {
+    flex: 1 1 auto;
+    min-height: 18rem;
   }
 
   // Keeps the delete button across from the title when there is no save status to push it there.
