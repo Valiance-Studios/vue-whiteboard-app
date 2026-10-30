@@ -50,7 +50,7 @@ TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not ex
    - Note that a Firestore write made while offline stays pending rather than failing, so the status reads "Saving…" until the connection returns; the error state is for rejected writes, such as a board that was deleted.
    - Do not worry about supporting free writing/drawing with the mouse or a touch screen for now.
 
-Every page shares an app bar with the marker logo on the left and the theme toggle on the right. Once signed in, the toggle is followed by the user's Google photo (or initial) and name, a "Demo" chip in demo mode, and Sign out. On phones the name is hidden and Sign out shows only its icon (keeping "Sign out" as its accessible name), so the title is not squeezed out.
+Every page shares an app bar with the marker logo on the left and the theme toggle on the right. Once signed in, the toggle is followed by the user's Google photo (or initial, when the account has no photo) and name, a "Demo" chip in demo mode, and Sign out. On phones the name is hidden and Sign out shows only its icon (keeping "Sign out" as its accessible name), so the title is not squeezed out.
 
 `/` redirects to `/boards`. Routes requiring a session are flagged with `meta.requiresAuth`.
 
@@ -222,6 +222,7 @@ Last updated 2026-10-29.
 - A budget alert on the project's billing account: $75, alerting at 50%, 90% and 100%. Alerts only: it does not cap spending.
 - `npm run emulators` stops cleanly when the terminal running it closes (SIGHUP).
 - `npm audit` at 0, with `overrides` for three nested dependencies (see Known Quirks).
+- The app bar avatar shows the Google profile photo (it had always fallen back to the initial, because `v-avatar` ignores `image` when given a slot).
 
 **Next**
 - Enforce App Check for Cloud Firestore once the dashboard has shown nearly all traffic verified for a few days; then consider Authentication. Unenforcing in the console takes effect within minutes, with no deploy.

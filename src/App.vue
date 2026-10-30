@@ -23,15 +23,23 @@
         <theme-toggle :class="{'me-2': authStore.user}" />
 
         <template v-if="authStore.user">
+          <!-- The photo is in the slot because v-avatar ignores its `image` prop whenever a slot is given. -->
           <v-avatar
-            :image="authStore.user.photoURL ?? undefined"
             color="primary"
             variant="tonal"
             size="32"
             class="me-3"
           >
+            <!-- Google's photo host can refuse requests that send a referrer. -->
+            <v-img
+              v-if="authStore.user.photoURL"
+              :src="authStore.user.photoURL"
+              alt=""
+              cover
+              referrerpolicy="no-referrer"
+            />
             <span
-              v-if="!authStore.user.photoURL"
+              v-else
               class="text-subtitle-2 font-weight-bold"
             >{{ userInitial }}</span>
           </v-avatar>
