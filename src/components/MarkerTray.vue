@@ -17,7 +17,8 @@
         :aria-pressed="marker.ink === ink"
         :style="{'--marker-color': marker.color}"
         @mousedown.prevent
-        @click="$emit('pick', marker.ink)"
+        @focus="reveal"
+        @click="pick(marker.ink, $event)"
       >
         <span class="marker__cap" />
         <span class="marker__barrel" />
@@ -60,10 +61,30 @@ export default defineComponent({
       return this.markers.find((marker) => marker.ink === this.ink)?.name ?? '';
     },
   },
+
+  methods: {
+    pick(ink: MarkerInk, event: MouseEvent): void {
+      this.reveal(event);
+      this.$emit('pick', ink);
+    },
+
+    /**
+     * Scrolls a marker the row has cut off fully into view. Browsers do not scroll to a partly visible
+     * element on focus, and a tap never focuses one, since the editor keeps focus.
+     */
+    reveal(event: Event): void {
+      (event.currentTarget as HTMLElement).scrollIntoView({block: 'nearest', inline: 'nearest'});
+    },
+  },
 });
 </script>
 
 <style lang="scss" scoped>
+// Room the scrolling row keeps around each marker, so the lift, shadow and focus ring are not clipped.
+$marker-room-top: 18px;
+$marker-room-side: 8px;
+$marker-room-bottom: 10px;
+
 .marker-tray {
   display: flex;
   flex-wrap: wrap;
@@ -82,17 +103,42 @@ export default defineComponent({
     color: #2c3440;
   }
 
+  // Always one row of full-size markers: where it does not fit, it takes its own row and scrolls sideways.
+  // Padded for the room around each marker, with negative margins so the padding takes no space in the tray.
   &__markers {
     display: flex;
-    flex-wrap: wrap;
     align-items: flex-end;
     gap: 14px;
-    margin-left: auto;
+    min-width: 0;
+    padding: $marker-room-top $marker-room-side $marker-room-bottom;
+    margin: (-$marker-room-top) (-$marker-room-side) (-$marker-room-bottom) auto;
+    overflow-x: auto;
+    scroll-padding-inline: $marker-room-side;
+    scrollbar-width: thin;
+
+    @media (prefers-reduced-motion: no-preference) {
+      scroll-behavior: smooth;
+    }
+  }
+
+  // Phones: a slimmer tray, with the markers lined up under the label.
+  @media (max-width: 599.98px) {
+    gap: 6px;
+    padding: 8px 12px 4px;
+
+    &__label {
+      font-size: 0.75rem;
+    }
+
+    &__markers {
+      margin-left: -$marker-room-side;
+    }
   }
 }
 
 .marker {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   min-height: 44px;
   padding: 0 4px;

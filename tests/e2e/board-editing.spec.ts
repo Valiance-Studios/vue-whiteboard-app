@@ -1,6 +1,21 @@
+import type {Locator} from '@playwright/test';
+
 import {expect, test} from '@playwright/test';
 import {signIn} from './support/auth';
 import {boardLines, boardText, createBoard, inkedText, marker, saveStatus, writeOnBoard} from './support/boards';
+
+type Box = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
+
+/** Where an element is on the page; it must be visible. */
+async function boundingBox(locator: Locator): Promise<Box> {
+  const box = await locator.boundingBox();
+
+  if (!box) {
+    throw new Error('Expected the element to be visible');
+  }
+
+  return box;
+}
 
 test.describe('board editing', () => {
   test.beforeEach(async ({page}) => {
@@ -123,5 +138,37 @@ test.describe('board editing', () => {
 
     const pageScrolls = await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight);
     expect(pageScrolls).toBe(false);
+  });
+
+  test('keeps the board header compact and scrolls the marker tray on a phone', async ({page}) => {
+    await page.setViewportSize({width: 360, height: 640});
+    await createBoard(page, 'Pocket Board');
+    await writeOnBoard(page, 'Hi');
+    await expect(saveStatus(page)).toContainText('All changes saved');
+
+    // The status and delete button stay beside the title rather than wrapping under it.
+    const heading = await boundingBox(page.getByRole('heading', {name: 'Pocket Board'}));
+
+    for (const control of [saveStatus(page), page.getByRole('button', {name: 'Delete Pocket Board'})]) {
+      const box = await boundingBox(control);
+      expect(box.y).toBeLessThan(heading.y + heading.height);
+    }
+
+    const tray = await boundingBox(page.locator('.marker-tray'));
+    expect(tray.height).toBeLessThan(110);
+
+    // One row of full-size markers that scrolls sideways, rather than wrapping onto more rows.
+    const markerRow = page.getByRole('group', {name: 'Marker color'});
+    const scrolls = await markerRow.evaluate((row) => row.scrollWidth > row.clientWidth);
+    expect(scrolls).toBe(true);
+    await expect(marker(page, 'Orange')).not.toBeInViewport();
+
+    // Tapping a marker the row cuts off scrolls it fully into view. Dispatched, since Playwright's own
+    // click would scroll it into view first.
+    await expect(marker(page, 'Red')).not.toBeInViewport({ratio: 1});
+    await marker(page, 'Red').dispatchEvent('click');
+
+    await expect(marker(page, 'Red')).toBeInViewport({ratio: 1});
+    await expect(marker(page, 'Red')).toHaveAttribute('aria-pressed', 'true');
   });
 });
