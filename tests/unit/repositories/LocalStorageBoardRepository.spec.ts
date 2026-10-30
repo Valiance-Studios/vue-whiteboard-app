@@ -67,6 +67,18 @@ describe('LocalStorageBoardRepository', () => {
     expect((await repository().list()).map((board) => board.title)).toEqual(['Kept']);
   });
 
+  it('rejects creating a board with a blank title', async () => {
+    await expect(repository().create({title: '   '})).rejects.toThrow();
+    await expect(repository().list()).resolves.toEqual([]);
+  });
+
+  it('rejects renaming a board to a blank title, keeping the old one', async () => {
+    const id = await repository().create({title: 'Name'});
+
+    await expect(repository().rename(id, '   ')).rejects.toThrow();
+    await expect(repository().get(id)).resolves.toMatchObject({title: 'Name'});
+  });
+
   it('rejects renaming or deleting a board that does not exist', async () => {
     await expect(repository().rename('missing', 'Anything')).rejects.toThrow();
     await expect(repository().delete('missing')).rejects.toThrow();
