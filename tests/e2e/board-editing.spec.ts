@@ -140,7 +140,7 @@ test.describe('board editing', () => {
     expect(pageScrolls).toBe(false);
   });
 
-  test('keeps the board header and marker tray compact on a phone', async ({page}) => {
+  test('keeps the board header compact and scrolls the marker tray on a phone', async ({page}) => {
     await page.setViewportSize({width: 360, height: 640});
     await createBoard(page, 'Pocket Board');
     await writeOnBoard(page, 'Hi');
@@ -155,13 +155,20 @@ test.describe('board editing', () => {
     }
 
     const tray = await boundingBox(page.locator('.marker-tray'));
-    expect(tray.height).toBeLessThan(100);
+    expect(tray.height).toBeLessThan(110);
 
-    // Every marker sits inside the tray, none pushed past its right edge or onto another row.
-    for (const name of ['Black', 'Blue', 'Red', 'Green', 'Purple', 'Orange']) {
-      const box = await boundingBox(marker(page, name));
-      expect(box.x + box.width).toBeLessThanOrEqual(tray.x + tray.width);
-      expect(box.y + box.height).toBeLessThanOrEqual(tray.y + tray.height);
-    }
+    // One row of full-size markers that scrolls sideways, rather than wrapping onto more rows.
+    const markerRow = page.getByRole('group', {name: 'Marker color'});
+    const scrolls = await markerRow.evaluate((row) => row.scrollWidth > row.clientWidth);
+    expect(scrolls).toBe(true);
+    await expect(marker(page, 'Orange')).not.toBeInViewport();
+
+    // Tapping a marker the row cuts off scrolls it fully into view. Dispatched, since Playwright's own
+    // click would scroll it into view first.
+    await expect(marker(page, 'Red')).not.toBeInViewport({ratio: 1});
+    await marker(page, 'Red').dispatchEvent('click');
+
+    await expect(marker(page, 'Red')).toBeInViewport({ratio: 1});
+    await expect(marker(page, 'Red')).toHaveAttribute('aria-pressed', 'true');
   });
 });
