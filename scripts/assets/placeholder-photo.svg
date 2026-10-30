@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- A stand-in profile photo for emulator accounts, colored unlike the initial avatar so it is easy to tell apart. -->
+  <rect width="64" height="64" fill="#e8a33d" />
+  <circle cx="32" cy="25" r="11" fill="#fff4e0" />
+  <path d="M10 60c2-12 11-19 22-19s20 7 22 19z" fill="#fff4e0" />
+</svg>

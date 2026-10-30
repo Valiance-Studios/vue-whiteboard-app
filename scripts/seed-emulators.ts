@@ -9,9 +9,9 @@
  */
 import type {EmulatorAccount} from './emulator-admin.ts';
 
-import {allowEmail, createGoogleAccount} from './emulator-admin.ts';
+import {allowEmail, createGoogleAccount, PLACEHOLDER_PHOTO_URL} from './emulator-admin.ts';
 
-const DEV_ACCOUNT: EmulatorAccount = {email: 'dev@example.com', displayName: 'Dev User'};
+const DEV_ACCOUNT: EmulatorAccount = {email: 'dev@example.com', displayName: 'Dev User', photoUrl: PLACEHOLDER_PHOTO_URL};
 
 await createGoogleAccount(DEV_ACCOUNT);
 await allowEmail(DEV_ACCOUNT.email);
