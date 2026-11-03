@@ -169,16 +169,17 @@ Firebase Hosting, deployed manually, to the dev project `vs-valiance-studios-dev
 
 ## App Check
 
-App Check (reCAPTCHA Enterprise) attests that requests come from this web app, so once it is enforced, Firestore rejects calls from scripts that only have the (public) web config, even with an allowlisted account's token. It does not stop someone using the real site in a browser; the allowlist covers that. It is used on the dev project too, since that project is public, on billing, and in use.
+App Check (reCAPTCHA Enterprise) attests that requests come from this web app, and it is **enforced for Cloud Firestore and Authentication** in `vs-valiance-studios-dev`, so both reject calls from scripts that only have the (public) web config, even with an allowlisted account's token. It does not stop someone using the real site in a browser; the allowlist covers that. It is used on the dev project too, since that project is public, on billing, and in use.
 
 - **Client** (`activateAppCheck` in `src/firebase/appCheck.ts`, called from `src/firebase/index.ts`): `initializeAppCheck` with `ReCaptchaEnterpriseProvider` and token auto-refresh, before Auth and Firestore are created. It is skipped against the emulators (which do not check App Check) and when no site key is set, so `npm run dev`, the emulator tests and the E2E tests are unaffected.
-- **Site key**: `VITE_APPCHECK_SITE_KEY` in `.env.staging` (site keys are public). `scripts/check-firebase-config.ts` fails a deploy without it, because a build without App Check would be locked out the moment enforcement is turned on.
+- **Site key**: `VITE_APPCHECK_SITE_KEY` in `.env.staging` (site keys are public). `scripts/check-firebase-config.ts` fails a deploy without it, because with enforcement on, a build without App Check is locked out.
+- **Enforcement** is project-wide per service, not per app: every app in `vs-valiance-studios-dev` that uses Firestore or Authentication must send App Check tokens. A new app in the project needs App Check from its first deploy.
 - **Console setup** (once per project):
   1. Google Cloud console > Security > reCAPTCHA (enable the reCAPTCHA Enterprise API if asked): create a **website** key for the hosting domains, `vs-valiance-studios-dev-whiteboard.web.app` and `vs-valiance-studios-dev-whiteboard.firebaseapp.com`, plus any custom domain. Do not enable a challenge; App Check uses score-based keys.
   2. Firebase console > App Check > Apps: register the web app with the **reCAPTCHA Enterprise** provider and that site key.
   3. Put the key in the mode's env file (`.env.staging` for the dev project) as `VITE_APPCHECK_SITE_KEY` and deploy.
   4. **Monitor before enforcing**: leave Firestore unenforced for a few days and watch App Check > APIs > Cloud Firestore. Nearly all requests should be "verified". Unverified ones come from old cached builds, scripts, or a misconfigured domain.
-  5. **Enforce** for Cloud Firestore. If the app breaks, unenforce in the console; it takes effect within minutes and needs no deploy.
+  5. **Enforce** for Cloud Firestore and Authentication (done for the dev project). If the app breaks, unenforce in the console; it takes effect within minutes and needs no deploy.
 - **Debug token** for `npm run dev:staging`: `localhost` is deliberately not a reCAPTCHA domain, so local runs against the dev project use a debug token instead. Generate one (e.g. `node -e "console.log(crypto.randomUUID())"`), register it in Firebase console > App Check > Apps > (web app) > Manage debug tokens, and put `VITE_APPCHECK_DEBUG_TOKEN=<token>` in a gitignored `.env.staging.local`. `activateAppCheck` sets it as `self.FIREBASE_APPCHECK_DEBUG_TOKEN` before starting App Check. A registered debug token passes App Check, so the deploy check refuses any build that has one; revoke it in the console if it leaks.
 - A future production project repeats the console steps with its own key; the code does not change.
 
@@ -240,7 +241,7 @@ Last updated 2026-11-02.
 - Light and dark themes, with a toggle in the app bar; follows the system setting until one is picked.
 - The marker icon as the tab icon, with PNG fallbacks.
 - The dev project is deployed and in use (`npm run deploy` after merging), with the allowlist in place.
-- App Check (reCAPTCHA Enterprise) in the client; the key is registered on the dev project and the dashboard shows Firestore and Authentication requests as verified. Not yet enforced.
+- App Check (reCAPTCHA Enterprise) in the client; the key is registered on the dev project and App Check is enforced for Cloud Firestore and Authentication in the dev project (2026-11-02).
 - A budget alert on the project's billing account: $75, alerting at 50%, 90% and 100%. Alerts only: it does not cap spending.
 - `npm run emulators` stops cleanly when the terminal running it closes (SIGHUP).
 - `npm audit` at 0, with `overrides` for three nested dependencies (see Known Quirks).
@@ -257,7 +258,7 @@ Last updated 2026-11-02.
 - The repository is public, with a `README.md` for visitors (live demo link, screenshot, features, highlights, local setup) that points here for depth. Its screenshot is `docs/screenshots/boards.png`, taken from `/demo` against the local dev server; retake it when the collection view changes noticeably.
 
 **Next**
-- Enforce App Check for Cloud Firestore once the dashboard has shown nearly all traffic verified for a few days; then consider Authentication. Unenforcing in the console takes effect within minutes, with no deploy.
+- Nothing scheduled; see Later.
 
 **Later**
 - Sketch mode with mouse, touch and pen, as a stretch goal (listed under "On the Horizon" in the README and About dialog): tracked in GitHub issue #20, with the work in PRs #17 (fixed board layout) and #19 (sketch mode). On hold because the fixed layout makes the writing too small on phones; #20 lists the options.

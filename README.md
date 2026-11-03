@@ -22,7 +22,7 @@ A whiteboard app for jotting down notes in colored markers, with each user's boa
 
 - **Owner-only Firestore security rules**, covered by their own test suite against the Firestore emulator. Rules also cap board size and limit how often one board can be written.
 - **Access by allowlist**: Google sign-in only opens the app for allowlisted accounts. Anyone else is signed back out, and their request is recorded for the owner.
-- **App Check** (reCAPTCHA Enterprise) in the client, so requests from outside the real app can be turned away. It is monitored now, with enforcement to follow.
+- **App Check** (reCAPTCHA Enterprise), enforced for Firestore and Authentication, so requests from outside the real app are turned away.
 - **Swappable storage**: the views work against a `BoardRepository` interface, with a Firestore implementation for Google accounts and a `localStorage` one for demo mode. One factory picks between them per session.
 - **Three test suites**: Vitest unit tests, emulator tests for the security rules and repositories, and Playwright end-to-end tests that sign in through the Auth emulator.
 
