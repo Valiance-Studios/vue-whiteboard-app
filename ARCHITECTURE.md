@@ -129,24 +129,39 @@ Visitors can use the app without an account, with their boards kept in this brow
 ## Local Development
 
 - Development runs against the **Firebase Local Emulator Suite** (Auth + Firestore) using the `demo-whiteboard-app` project ID. The `demo-` prefix guarantees no real Firebase resources are touched.
-- `VITE_USE_FIREBASE_EMULATORS=true` connects the SDK to the emulators. Real project config is supplied later via `.env.local` (not committed).
+- `VITE_USE_FIREBASE_EMULATORS=true` (in `.env.development`) connects the SDK to the emulators. See "Environment files" for the other modes.
 - Requires Java 21+ (for the Firestore emulator); `firebase-tools` is a dev dependency.
 - New machine setup: `nvm install 26` and `nvm use 26` (nvm-windows does not read `.nvmrc`), `npm ci`, then `npx playwright install chromium`. The first emulator run downloads the emulator binaries.
 - Run `npm run emulators` in one terminal and `npm run dev` in another. Emulator UI: http://127.0.0.1:4000. Stop the emulators with Ctrl+C.
+- `npm run dev:staging` runs the dev server against the hosted dev project instead (`.env.staging`), with real Google sign-in and the real allowlist. It needs an App Check debug token in `.env.staging.local` (see "App Check").
 - `npm run emulators` seeds the emulators on every start (`scripts/seed-emulators.ts`, since emulator data is not kept between runs) with **Dev User (`dev@example.com`)**, a verified Google account that is on the allowlist and has a profile photo (`PLACEHOLDER_PHOTO_URL`, a data URL of `scripts/assets/placeholder-photo.svg`, so it loads offline and never ships with the app). A real Google account cannot sign in locally, since sign-in goes through the Auth emulator; to see the initial instead of a photo, add an account in the popup and leave "Profile photo URL" empty. Pick it under "Choose an account" in the sign-in popup. The rules are not relaxed for local work: the account is allowlisted just as one would be in production, so local development runs against the deployed rules. To try another account, add `allowedUsers/<lowercase email>` (no fields) in the Emulator UI's Firestore tab on the `vue-whiteboard-app` database; a new account without an entry shows the "no access" message.
 - `scripts/emulator-admin.ts` holds the admin helpers the seed and the E2E tests share (`allowEmail`, `createGoogleAccount`). They call the emulators' REST APIs with the `Bearer owner` admin token, take the project, database and ports from `.env.development` and `firebase.json`, and refuse to run against a project id without the `demo-` prefix.
 - `npm run test:emulator` and `npm run test:e2e` start their own emulators through `scripts/with-emulators.ts` (run directly by Node's built-in TypeScript support). `npm run emulators` uses the same script with `--keep-running`, which leaves the emulators up (showing their output) after the seed succeeds, until Ctrl+C. It replaces `firebase emulators:exec`, which on Windows left the Firestore emulator's Java process running and broke the next run with "port taken". Stop any `npm run emulators` session first, since both use the same ports.
 - `npm run emulators:stop` (`scripts/stop-emulators.ts`) stops this project's emulators, for an `npm run emulators` session in another terminal or a leftover process from a crashed run. It finds them by command line, not by port: `with-emulators.ts`, the Firebase CLI and the Firestore emulator's Java process, each naming the emulator project id (the default in `.firebaserc`). It then checks that the ports from `firebase.json` (plus the CLI's hub and logging ports) are free by connecting to them on `127.0.0.1` and `::1`. An unrelated server on a shared port such as 8080 is never stopped; it is reported, and the script exits with an error.
 
+## Environment files
+
+One file per Vite mode, with no bare `.env` (Vite loads `.env` and `.env.local` in every mode, so real config there would point `npm run dev` and the E2E tests at real Firebase). Vite does not layer modes, so each file holds a complete config.
+
+| File | Committed | Used for |
+| --- | --- | --- |
+| `.env.development` | Yes | The emulators (`demo-whiteboard-app`): `npm run dev`, the seed, and the E2E tests. Vite's default mode. |
+| `.env.staging` | Yes | The app hosted in the dev project (`vue-whiteboard-app-dev`): `npm run dev:staging`, `npm run build:staging`, and every deploy. Firebase web config is compiled into the public site, so it is not secret. |
+| `.env.production` | Yes | Reserved for a future production project. None exists yet ("staging is production"), so it is empty and nothing builds with it. |
+| `.env.example` | Yes | Template for a new env file. |
+| `.env.<mode>.local` | No | Personal, machine-specific overrides of the matching mode, such as the App Check debug token in `.env.staging.local`. |
+
+Never put real secrets in `VITE_` variables; they end up in the bundle.
+
 ## Deployment
 
-Firebase Hosting, deployed manually, to the dev project `vs-valiance-studios-dev` (`dev` alias in `.firebaserc`). There is no production project yet; adding one means another alias and another `.env` file, not a rework. `default` stays the `demo-whiteboard-app` emulator project so a stray `firebase` command cannot reach real infrastructure.
+Firebase Hosting, deployed manually, to the dev project `vs-valiance-studios-dev` (`dev` alias in `.firebaserc`). There is no production project yet, so deploys build in the `staging` mode (`.env.staging`); adding production means another alias and filling in `.env.production`, not a rework. `default` stays the `demo-whiteboard-app` emulator project so a stray `firebase` command cannot reach real infrastructure.
 
-- **First-time setup**: `firebase login`, then copy `.env.example` to `.env.production.local` and fill it in from the `vue-whiteboard-app-dev` web app config, plus the App Check site key (see "App Check"). Use `.env.production.local`, not `.env.local`: Vite loads `.env.local` in every mode, so real credentials there would point `npm run dev` and the E2E tests at real Firebase instead of the emulators.
+- **First-time setup**: `firebase login`. The web app config and App Check site key are already in the committed `.env.staging`.
 - **Allowlist**: before the first rules deploy, add `allowedUsers/<lowercase email>` (no fields) to the `vue-whiteboard-app` database in the Firebase console for each person who should have access, or everyone, including you, is locked out. Add and remove people the same way later; no deploy is needed.
 - **Deploy**: `npm run deploy` (hosting + Firestore rules and indexes), or `npm run deploy:hosting` / `npm run deploy:rules` for one of them. All three are pinned to `--project dev`. `firebase deploy --dry-run` validates a deploy, including the predeploy build and rules compilation, without publishing.
 - The app has its **own Hosting site**, `vs-valiance-studios-dev-whiteboard` (`hosting.site` in `firebase.json`), served at https://vs-valiance-studios-dev-whiteboard.web.app. The project's default site is left free for other Valiance Studios apps, and deploys here cannot affect them. A custom domain, if one is wanted later, attaches to this site without redeploying.
-- `hosting.predeploy` runs `scripts/check-firebase-config.ts` and then the build, so a deploy fails early if the config or the App Check site key is missing, or the config still points at the emulators, rather than serving an app that cannot reach Firebase. `npm run build` on its own needs no credentials, since it doubles as the type and bundle check.
+- `hosting.predeploy` runs `node scripts/check-firebase-config.ts staging` and then `npm run build:staging` (`vite build --mode staging`), so a deploy fails early if the config, the database id or the App Check site key is missing, the config points at the emulators, or an App Check debug token is set (from `.env.staging.local`), rather than serving an app that cannot reach Firebase or that anyone could get past App Check with. Remove or rename `.env.staging.local` before deploying. `npm run build` on its own builds the `production` mode, which needs no credentials, since it doubles as the type and bundle check.
 - The `firestore` entry in `firebase.json` is the **array form with an explicit `database`**, so a rules deploy can only ever reach `vue-whiteboard-app`. The single-object form would deploy to `(default)` and could overwrite another app's rules in the shared project.
 - SPA routing needs the `**` → `/index.html` rewrite, or reloading `/boards/:id` would 404. Hashed assets under `/assets` are served immutable for a year; `index.html` is not cached.
 - After the first deploy, add the hosting domain to **Authentication > Settings > Authorized domains** if a custom domain is used. `*.web.app` and `*.firebaseapp.com` are authorized automatically.
@@ -156,15 +171,15 @@ Firebase Hosting, deployed manually, to the dev project `vs-valiance-studios-dev
 
 App Check (reCAPTCHA Enterprise) attests that requests come from this web app, so once it is enforced, Firestore rejects calls from scripts that only have the (public) web config, even with an allowlisted account's token. It does not stop someone using the real site in a browser; the allowlist covers that. It is used on the dev project too, since that project is public, on billing, and in use.
 
-- **Client** (`src/firebase/index.ts`): `initializeAppCheck` with `ReCaptchaEnterpriseProvider` and token auto-refresh, before any Firestore call. It is skipped against the emulators (which do not check App Check) and when no site key is set, so `npm run dev`, the emulator tests and the E2E tests are unaffected.
-- **Site key**: `VITE_APPCHECK_SITE_KEY` in `.env.production.local` (site keys are public; it sits beside the web config for consistency). `scripts/check-firebase-config.ts` fails a deploy without it, because a build without App Check would be locked out the moment enforcement is turned on.
+- **Client** (`activateAppCheck` in `src/firebase/appCheck.ts`, called from `src/firebase/index.ts`): `initializeAppCheck` with `ReCaptchaEnterpriseProvider` and token auto-refresh, before Auth and Firestore are created. It is skipped against the emulators (which do not check App Check) and when no site key is set, so `npm run dev`, the emulator tests and the E2E tests are unaffected.
+- **Site key**: `VITE_APPCHECK_SITE_KEY` in `.env.staging` (site keys are public). `scripts/check-firebase-config.ts` fails a deploy without it, because a build without App Check would be locked out the moment enforcement is turned on.
 - **Console setup** (once per project):
   1. Google Cloud console > Security > reCAPTCHA (enable the reCAPTCHA Enterprise API if asked): create a **website** key for the hosting domains, `vs-valiance-studios-dev-whiteboard.web.app` and `vs-valiance-studios-dev-whiteboard.firebaseapp.com`, plus any custom domain. Do not enable a challenge; App Check uses score-based keys.
   2. Firebase console > App Check > Apps: register the web app with the **reCAPTCHA Enterprise** provider and that site key.
-  3. Put the key in `.env.production.local` as `VITE_APPCHECK_SITE_KEY` and deploy.
+  3. Put the key in the mode's env file (`.env.staging` for the dev project) as `VITE_APPCHECK_SITE_KEY` and deploy.
   4. **Monitor before enforcing**: leave Firestore unenforced for a few days and watch App Check > APIs > Cloud Firestore. Nearly all requests should be "verified". Unverified ones come from old cached builds, scripts, or a misconfigured domain.
   5. **Enforce** for Cloud Firestore. If the app breaks, unenforce in the console; it takes effect within minutes and needs no deploy.
-- Running the dev server against the real project (not the emulators) would need an App Check debug token once enforced; nothing here does that today.
+- **Debug token** for `npm run dev:staging`: `localhost` is deliberately not a reCAPTCHA domain, so local runs against the dev project use a debug token instead. Generate one (e.g. `node -e "console.log(crypto.randomUUID())"`), register it in Firebase console > App Check > Apps > (web app) > Manage debug tokens, and put `VITE_APPCHECK_DEBUG_TOKEN=<token>` in a gitignored `.env.staging.local`. `activateAppCheck` sets it as `self.FIREBASE_APPCHECK_DEBUG_TOKEN` before starting App Check. A registered debug token passes App Check, so the deploy check refuses any build that has one; revoke it in the console if it leaks.
 - A future production project repeats the console steps with its own key; the code does not change.
 
 ## Testing
@@ -205,7 +220,7 @@ ESLint (flat config, `eslint.config.js`) with `typescript-eslint`, `eslint-plugi
 
 ## Project Status
 
-Last updated 2026-10-30.
+Last updated 2026-11-02.
 
 **Done**
 - Scaffolding, tooling (ESLint, Vitest, Playwright), and Firebase emulator setup.
@@ -238,6 +253,7 @@ Last updated 2026-10-30.
 - A one-row marker tray on phones and tablets, scrolling sideways with full-size markers.
 - A one-row board header on phones: a smaller title, with an icon-only save status and the delete button beside it.
 - `npm run emulators:stop` finds the emulators by command line instead of unreliable port listings, so it no longer reports running emulators as stopped.
+- Env files follow one file per Vite mode: `.env.staging` (committed) replaces `.env.production.local`, deploys build with `--mode staging`, and `npm run dev:staging` runs locally against the dev project using an App Check debug token from `.env.staging.local`. The deploy check refuses a debug token.
 - The repository is public, with a `README.md` for visitors (live demo link, screenshot, features, highlights, local setup) that points here for depth. Its screenshot is `docs/screenshots/boards.png`, taken from `/demo` against the local dev server; retake it when the collection view changes noticeably.
 
 **Next**
@@ -245,4 +261,4 @@ Last updated 2026-10-30.
 
 **Later**
 - Sketch mode with mouse, touch and pen, as a stretch goal (listed under "On the Horizon" in the README and About dialog): tracked in GitHub issue #20, with the work in PRs #17 (fixed board layout) and #19 (sketch mode). On hold because the fixed layout makes the writing too small on phones; #20 lists the options.
-- A production Firebase project, if wanted: another alias in `.firebaserc` and another `.env` file (see Deployment).
+- A production Firebase project, if wanted: another alias in `.firebaserc`, filling in `.env.production`, and `production`-mode deploy scripts (see Deployment).

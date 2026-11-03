@@ -50,6 +50,8 @@ npm run dev         # in another: serves the app at http://localhost:5173
 
 The app runs against the Firebase Local Emulator Suite, so no real Firebase project is needed. Sign in as the seeded Dev User, or use demo mode.
 
+To run locally against the hosted Firebase project instead, use `npm run dev:staging` (config in `.env.staging`). It needs an App Check debug token in a gitignored `.env.staging.local`; see "App Check" in [ARCHITECTURE.md](ARCHITECTURE.md).
+
 | Command | What it does |
 | --- | --- |
 | `npm run lint` | Lints the project |

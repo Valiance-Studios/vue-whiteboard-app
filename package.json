@@ -8,7 +8,9 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:staging": "vite --mode staging",
     "build": "vue-tsc --build && vite build",
+    "build:staging": "vue-tsc --build && vite build --mode staging",
     "preview": "vite preview",
     "type-check": "vue-tsc --build",
     "emulators": "node scripts/with-emulators.ts --keep-running --project demo-whiteboard-app --only auth,firestore -- node scripts/seed-emulators.ts",
