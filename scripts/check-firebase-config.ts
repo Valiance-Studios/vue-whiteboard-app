@@ -1,7 +1,7 @@
 /**
- * Fails a deploy whose production build would have no Firebase config.
+ * Fails a deploy whose build would have no Firebase config, or a config that must never ship.
  *
- * Usage: node scripts/check-firebase-config.ts
+ * Usage: node scripts/check-firebase-config.ts <mode>   (e.g. `staging`, the mode deploys build with)
  *
  * Without this the build still succeeds, Hosting serves it, and the app only reports the problem
  * in the browser as an opaque Firebase error. It runs from `hosting.predeploy` in firebase.json,
@@ -10,22 +10,54 @@
  */
 import {loadEnv} from 'vite';
 
-// Reads .env, .env.production and .env.production.local, plus any VITE_ variables in the shell.
-const env = loadEnv('production', process.cwd(), 'VITE_');
-// The App Check site key is required too: without it the app sends no App Check tokens, and once
-// enforcement is on in the console, Firestore would reject every request from the deployed site.
-const missing = ['VITE_FIREBASE_API_KEY', 'VITE_FIREBASE_PROJECT_ID', 'VITE_FIREBASE_APP_ID', 'VITE_APPCHECK_SITE_KEY'].filter((key) => !env[key]);
+const REQUIRED = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_APP_ID',
+  'VITE_FIREBASE_DATABASE_ID',
+  // Without it the app sends no App Check tokens, and once enforcement is on in the console,
+  // Firestore would reject every request from the deployed site.
+  'VITE_APPCHECK_SITE_KEY',
+];
 
-if (env.VITE_USE_FIREBASE_EMULATORS === 'true') {
-  console.error('Refusing to deploy a build pointed at the Firebase emulators (VITE_USE_FIREBASE_EMULATORS=true).');
-  process.exit(1);
+/** What is wrong with a deploy's env, if anything. */
+export function findConfigProblems(env: Record<string, string | undefined>, mode: string): string[] {
+  const problems: string[] = [];
+  const missing = REQUIRED.filter((key) => !env[key]);
+
+  if (missing.length > 0) {
+    problems.push(`Firebase config is missing: ${missing.join(', ')}. Copy .env.example to .env.${mode} and fill it in from the Firebase console (see ARCHITECTURE.md, "App Check", for the site key).`);
+  }
+
+  if (env.VITE_USE_FIREBASE_EMULATORS === 'true') {
+    problems.push('The build is pointed at the Firebase emulators (VITE_USE_FIREBASE_EMULATORS=true).');
+  }
+
+  if (env.VITE_APPCHECK_DEBUG_TOKEN) {
+    // A registered debug token passes App Check, so shipping it would let anyone bypass it.
+    problems.push(`An App Check debug token is set (VITE_APPCHECK_DEBUG_TOKEN, likely in .env.${mode}.local). It is for local runs only; remove it before deploying.`);
+  }
+
+  return problems;
 }
 
-if (missing.length > 0) {
-  console.error(`Firebase config is missing: ${missing.join(', ')}.`);
-  console.error('Copy .env.example to .env.production.local and fill it in from the Firebase console.');
-  console.error('The App Check site key is the reCAPTCHA Enterprise key registered for the web app (see ARCHITECTURE.md, "App Check").');
-  process.exit(1);
-}
+if (import.meta.main) {
+  const mode = process.argv[2];
 
-console.log(`Deploying with Firebase project "${env.VITE_FIREBASE_PROJECT_ID}", database "${env.VITE_FIREBASE_DATABASE_ID || '(default)'}".`);
+  if (!mode) {
+    console.error('Usage: node scripts/check-firebase-config.ts <mode>');
+    process.exit(1);
+  }
+
+  // Reads .env.<mode> and .env.<mode>.local, plus any VITE_ variables in the shell.
+  const env = loadEnv(mode, process.cwd(), 'VITE_');
+  const problems = findConfigProblems(env, mode);
+
+  if (problems.length > 0) {
+    console.error(`Refusing to deploy the ${mode} build:\n${problems.map((problem) => `- ${problem}`).join('\n')}`);
+    process.exit(1);
+  }
+
+  console.log(`Deploying the ${mode} build with Firebase project "${env.VITE_FIREBASE_PROJECT_ID}", database "${env.VITE_FIREBASE_DATABASE_ID}", App Check on.`);
+}

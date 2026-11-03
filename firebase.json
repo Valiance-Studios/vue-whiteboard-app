@@ -17,7 +17,7 @@
         "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
       }
     ],
-    "predeploy": ["node scripts/check-firebase-config.ts", "npm run build"]
+    "predeploy": ["node scripts/check-firebase-config.ts staging", "npm run build:staging"]
   },
   "emulators": {
     "auth": { "port": 9099 },
