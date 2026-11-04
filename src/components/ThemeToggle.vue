@@ -14,11 +14,14 @@ import type {ThemeChoice} from '@/theme/themePreference';
 
 import {defineComponent} from 'vue';
 import vuetify from '@/plugins/vuetify';
-import {saveThemeChoice} from '@/theme/themePreference';
 
-/** Switches between the light and dark themes and remembers the choice in this browser. */
+/** Shows the current theme, and reports the opposite one when clicked. */
 export default defineComponent({
   name: 'ThemeToggle',
+
+  emits: {
+    change: (choice: ThemeChoice) => Boolean(choice),
+  },
 
   computed: {
     isDark(): boolean {
@@ -32,9 +35,7 @@ export default defineComponent({
 
   methods: {
     toggle(): void {
-      const choice: ThemeChoice = this.isDark ? 'light' : 'dark';
-      saveThemeChoice(localStorage, choice);
-      void vuetify.theme.change(choice);
+      this.$emit('change', this.isDark ? 'light' : 'dark');
     },
   },
 });

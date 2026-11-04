@@ -253,7 +253,14 @@ describe('boards: update', () => {
     await assertSucceeds(updateDoc(doc(db(OWNER), 'boards', BOARD_ID), {content: '', inks: '', updatedAt: selfStamp(OWNER)}));
   });
 
+  it('allows runs from the RGB marker', async () => {
+    await assertSucceeds(updateDoc(doc(db(OWNER), 'boards', BOARD_ID), {content: 'hello', inks: 'blue:2,#d81b60:3', updatedAt: selfStamp(OWNER)}));
+  });
+
   it.each([
+    ['an uppercase hex color', '#D81B60:5'],
+    ['a short hex color', '#abc:5'],
+    ['a hex color with no length', '#d81b60'],
     ['an unknown ink', 'pink:5'],
     ['a zero-length run', 'blue:0'],
     ['a missing length', 'blue'],

@@ -8,7 +8,7 @@ A whiteboard app for jotting down notes in colored markers, with each user's boa
 
 ## Features
 
-- **Marker colors**: write in black, blue, red, green, purple or orange, picked from a marker tray.
+- **Marker colors**: write in black, blue, red, green, purple or orange, picked from a marker tray, or in any color with the RGB marker, which remembers your color.
 - **Auto-save**: changes save as you write, with a save status on the board.
 - **Board collection**: a searchable grid of your boards, with previews of what is written on each. Rename and delete from the grid or the board.
 - **Light and dark themes**: follows the system setting until you pick one.

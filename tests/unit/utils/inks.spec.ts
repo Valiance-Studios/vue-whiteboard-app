@@ -74,3 +74,25 @@ describe('writingFromSegments', () => {
     expect(writingFromSegments(inkSegments(writing.content, writing.inks))).toEqual(writing);
   });
 });
+
+describe('hex inks', () => {
+  it('round-trips runs from the RGB marker', () => {
+    const runs = [{ink: 'blue', length: 4}, {ink: '#d81b60', length: 7}] as const;
+    const encoded = encodeInks(runs);
+
+    expect(encoded).toBe('blue:4,#d81b60:7');
+    expect(decodeInks(encoded, 11)).toEqual(runs);
+  });
+
+  it('keeps neighbouring runs of different hex colors apart, and joins equal ones', () => {
+    expect(normalizeInks([
+      {ink: '#111111', length: 1},
+      {ink: '#111111', length: 1},
+      {ink: '#222222', length: 1},
+    ], 3)).toEqual([{ink: '#111111', length: 2}, {ink: '#222222', length: 1}]);
+  });
+
+  it('falls back to the default ink for a malformed hex color', () => {
+    expect(decodeInks('#d81b6:3', 3)).toEqual([{ink: 'blue', length: 3}]);
+  });
+});

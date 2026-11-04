@@ -44,7 +44,7 @@ export function normalizeInks(runs: readonly InkRun[], length: number): InkRun[]
   return normalized;
 }
 
-/** Writes runs compactly for storage, e.g. `blue:24,red:7`. */
+/** Writes runs compactly for storage, e.g. `blue:24,#d81b60:7`. */
 export function encodeInks(runs: readonly InkRun[]): string {
   return runs.map((run) => `${run.ink}:${run.length}`).join(',');
 }

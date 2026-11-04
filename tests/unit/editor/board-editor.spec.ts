@@ -83,6 +83,23 @@ describe('Ink', () => {
     expect(writingOf(target)).toEqual({content: 'Milk Eggs', inks: [{ink: 'blue', length: 5}, {ink: 'purple', length: 4}]});
   });
 
+  it('recolors selected text and writes on in a hex ink', () => {
+    const target = createEditor({content: 'Milk Eggs', inks: [{ink: 'blue', length: 9}]});
+    target.commands.setTextSelection({from: afterCharacter(5), to: afterCharacter(9)});
+
+    target.commands.setInk('#d81b60');
+    target.commands.setTextSelection(afterCharacter(9));
+    target.commands.insertContent('!');
+
+    expect(writingOf(target).inks).toEqual([{ink: 'blue', length: 5}, {ink: '#d81b60', length: 5}]);
+  });
+
+  it('keeps a hex ink through the stored writing', () => {
+    const writing = {content: 'Hi', inks: [{ink: '#d81b60', length: 2}]} as const;
+
+    expect(writingOf(createEditor({content: writing.content, inks: [...writing.inks]}))).toEqual(writing);
+  });
+
   it('writes pasted text in the marker in hand', () => {
     const target = createEditor({content: 'Hello', inks: [{ink: 'blue', length: 5}]});
     target.commands.setTextSelection(afterCharacter(5));

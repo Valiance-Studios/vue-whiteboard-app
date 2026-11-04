@@ -35,6 +35,25 @@ export function marker(page: Page, name: string): Locator {
   return page.getByRole('button', {name: `${name} marker`});
 }
 
+/** The RGB marker's color panel. */
+export function colorPanel(page: Page): Locator {
+  return page.getByRole('dialog', {name: 'RGB marker color'});
+}
+
+/** Opens the color panel from any marker: the first click picks up the RGB marker, the second opens it. */
+export async function openColorPanel(page: Page): Promise<Locator> {
+  const rgbMarker = marker(page, 'RGB');
+
+  if (await rgbMarker.getAttribute('aria-pressed') === 'false') {
+    await rgbMarker.click();
+  }
+
+  await rgbMarker.click();
+  await expect(colorPanel(page)).toBeVisible();
+
+  return colorPanel(page);
+}
+
 /** Replaces everything on the board with `text`, typing each line as the user would. */
 export async function writeOnBoard(page: Page, text: string): Promise<void> {
   await boardText(page).click();

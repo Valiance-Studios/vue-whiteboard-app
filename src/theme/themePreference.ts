@@ -3,12 +3,16 @@ export type ThemeChoice = 'light' | 'dark';
 
 const THEME_KEY = 'whiteboard.theme';
 
+export function isThemeChoice(value: unknown): value is ThemeChoice {
+  return value === 'light' || value === 'dark';
+}
+
 /** The visitor's saved choice, or `null` if they have not picked one (or it cannot be read). */
 export function loadThemeChoice(storage: Storage): ThemeChoice | null {
   try {
     const choice = storage.getItem(THEME_KEY);
 
-    return choice === 'light' || choice === 'dark' ? choice : null;
+    return isThemeChoice(choice) ? choice : null;
   } catch {
     return null;
   }

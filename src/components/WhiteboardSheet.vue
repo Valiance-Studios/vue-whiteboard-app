@@ -14,7 +14,10 @@
 
     <marker-tray
       :ink="ink"
+      :custom-color="customColor"
       @pick="pickMarker"
+      @custom-color-input="applyCustomColor"
+      @color-panel-close="finishCustomColor"
     />
   </div>
 </template>
@@ -22,6 +25,7 @@
 <script lang="ts">
 import type {MarkerInk} from '@/constants/markers';
 import type {BoardWriting} from '@/types/board';
+import type {HexColor} from '@/utils/color';
 import type {PropType, Raw} from 'vue';
 
 import {defineComponent, markRaw} from 'vue';
@@ -29,6 +33,7 @@ import {Editor, EditorContent} from '@tiptap/vue-3';
 import MarkerTray from '@/components/MarkerTray.vue';
 import {DEFAULT_INK, markerColor} from '@/constants/markers';
 import {boardExtensions, fromEditorDoc, toEditorContent} from '@/editor';
+import {isHexColor} from '@/utils/color';
 
 /**
  * The board's writing surface and its marker tray. `writing` is only read when the sheet is created;
@@ -47,10 +52,16 @@ export default defineComponent({
       type: Object as PropType<BoardWriting>,
       required: true,
     },
+    /** The user's saved RGB marker color. A new color is only reported once they are done choosing it. */
+    customMarkerColor: {
+      type: String as PropType<HexColor>,
+      required: true,
+    },
   },
 
   emits: {
     change: (writing: BoardWriting) => Boolean(writing),
+    customMarkerColorChange: (color: HexColor) => Boolean(color),
   },
 
   data() {
@@ -58,12 +69,22 @@ export default defineComponent({
       // Set with `markRaw`, so Vue does not wrap the editor and its ProseMirror state in reactive proxies.
       editor: null as Raw<Editor> | null,
       ink: DEFAULT_INK as MarkerInk,
+      customColor: this.customMarkerColor,
     };
   },
 
   computed: {
     inkColor(): string {
       return markerColor(this.ink);
+    },
+  },
+
+  watch: {
+    // The saved color can arrive after the sheet is created, since settings load separately from the board.
+    customMarkerColor(color: HexColor): void {
+      if (color !== this.customColor) {
+        this.applyCustomColor(color);
+      }
     },
   },
 
@@ -86,6 +107,8 @@ export default defineComponent({
   },
 
   beforeUnmount(): void {
+    // Leaving with the panel still open, e.g. with the browser's back button.
+    this.saveCustomColor();
     this.editor?.destroy();
   },
 
@@ -93,6 +116,27 @@ export default defineComponent({
     pickMarker(ink: MarkerInk): void {
       this.ink = ink;
       this.editor?.chain().focus().setInk(ink).run();
+    },
+
+    /** Changes the RGB marker's color, leaving focus alone. If it is in hand, the selected text and whatever is written next take the new color. */
+    applyCustomColor(color: HexColor): void {
+      this.customColor = color;
+
+      if (isHexColor(this.ink)) {
+        this.ink = color;
+        this.editor?.commands.setInk(color);
+      }
+    },
+
+    finishCustomColor(): void {
+      this.saveCustomColor();
+      this.editor?.commands.focus();
+    },
+
+    saveCustomColor(): void {
+      if (this.customColor !== this.customMarkerColor) {
+        this.$emit('customMarkerColorChange', this.customColor);
+      }
     },
   },
 });
