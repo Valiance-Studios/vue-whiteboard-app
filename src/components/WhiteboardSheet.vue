@@ -1,9 +1,21 @@
 <template>
   <div
     class="whiteboard-sheet"
+    :class="{'whiteboard-sheet--fullscreen': fullscreen}"
     :style="{'--marker-color': inkColor}"
   >
     <div class="whiteboard-sheet__board">
+      <v-btn
+        class="whiteboard-sheet__fullscreen-toggle"
+        :icon="fullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen'"
+        :aria-label="fullscreenLabel"
+        :title="fullscreenLabel"
+        variant="text"
+        density="comfortable"
+        color="#2c3440"
+        @mousedown.prevent
+        @click="toggleFullscreen"
+      />
       <div class="whiteboard-sheet__writing">
         <editor-content
           v-if="editor"
@@ -70,12 +82,17 @@ export default defineComponent({
       editor: null as Raw<Editor> | null,
       ink: DEFAULT_INK as MarkerInk,
       customColor: this.customMarkerColor,
+      fullscreen: false,
     };
   },
 
   computed: {
     inkColor(): string {
       return markerColor(this.ink);
+    },
+
+    fullscreenLabel(): string {
+      return this.fullscreen ? 'Exit full screen' : 'Enter full screen';
     },
   },
 
@@ -89,6 +106,7 @@ export default defineComponent({
   },
 
   mounted(): void {
+    document.addEventListener('fullscreenchange', this.onFullscreenChange);
     this.editor = markRaw(new Editor({
       extensions: boardExtensions(),
       content: toEditorContent(this.writing),
@@ -107,12 +125,46 @@ export default defineComponent({
   },
 
   beforeUnmount(): void {
+    document.removeEventListener('fullscreenchange', this.onFullscreenChange);
+    void this.leaveBrowserFullscreen();
     // Leaving with the panel still open, e.g. with the browser's back button.
     this.saveCustomColor();
     this.editor?.destroy();
   },
 
   methods: {
+    /**
+     * Covers the page with the sheet, and asks the browser to take the page full screen. The page rather
+     * than the sheet, because the color panel renders outside the sheet, where a full-screen sheet would hide it.
+     * Without browser support, or if the browser refuses, the sheet still fills the window.
+     */
+    async toggleFullscreen(): Promise<void> {
+      this.fullscreen = !this.fullscreen;
+
+      try {
+        if (this.fullscreen) {
+          await document.documentElement.requestFullscreen?.();
+        } else {
+          await this.leaveBrowserFullscreen();
+        }
+      } catch (error) {
+        console.warn('Could not change the browser\'s full-screen mode', error);
+      }
+    },
+
+    async leaveBrowserFullscreen(): Promise<void> {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+    },
+
+    /** The browser can leave full screen by itself, e.g. on Escape. */
+    onFullscreenChange(): void {
+      if (!document.fullscreenElement) {
+        this.fullscreen = false;
+      }
+    },
+
     pickMarker(ink: MarkerInk): void {
       this.ink = ink;
       this.editor?.chain().focus().setInk(ink).run();
@@ -150,6 +202,26 @@ export default defineComponent({
   display: flex;
   flex-direction: column;
 
+  // Above the app bar, and below Vuetify's overlays, so the color panel still opens over it.
+  &--fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    background: #fff;
+  }
+
+  &--fullscreen &__board,
+  &--fullscreen :deep(.marker-tray) {
+    border-radius: 0;
+  }
+
+  &__fullscreen-toggle {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    z-index: 1;
+  }
+
   &__board {
     @include board.surface(12px);
 
@@ -177,7 +249,8 @@ export default defineComponent({
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
-    padding: 16px 28px 28px;
+    // Wider on the right, so the first line stops short of the full-screen button.
+    padding: 16px 56px 28px 28px;
     overflow-y: auto;
 
     > :deep(div) {

@@ -556,6 +556,7 @@ Last updated 2026-11-03.
 - Marker tray and multi-color writing (a Tiptap editor), with colors stored as `inks` runs and shown in the collection previews.
 - An RGB marker, first on the tray: a second click opens a panel with a spectrum and RGB and hex fields. Its color is saved per user.
 - Renaming and deleting boards, from the board cards and from the board page.
+- A full-screen button on the board, showing only the board and marker tray.
 - The board and marker tray stay fixed on screen and the writing scrolls inside the board.
 - A one-row marker tray on phones and tablets, scrolling sideways with full-size markers, and a one-row board header on phones.
 
