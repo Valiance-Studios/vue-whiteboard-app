@@ -215,6 +215,13 @@ $marker-room-bottom: 10px;
     background: linear-gradient(90deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
   }
 
+  // Short screens, such as a phone on its side: the height goes to the board, and the lifted marker still shows which is in hand.
+  @media (max-height: 599.98px) {
+    &__label {
+      display: none;
+    }
+  }
+
   // Phones: a slimmer tray, with the markers lined up under the label.
   @media (max-width: 599.98px) {
     gap: 6px;

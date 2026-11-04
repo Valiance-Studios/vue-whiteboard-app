@@ -1,93 +1,111 @@
 <template>
-  <v-container class="board-view">
-    <v-skeleton-loader
-      v-if="loading"
-      type="heading"
-      max-width="480"
-      class="mb-4"
-    />
+  <v-container
+    class="board-view"
+    fluid
+  >
+    <v-btn
+      v-if="board && !loading && !headerInAppBar"
+      :to="boardCollectionRoute"
+      variant="text"
+      color="primary"
+      prepend-icon="mdi-chevron-left"
+      class="board-view__back mb-2"
+    >
+      My Boards
+    </v-btn>
 
-    <template v-else-if="board">
-      <v-btn
-        :to="boardCollectionRoute"
-        variant="text"
-        color="primary"
-        prepend-icon="mdi-chevron-left"
-        class="board-view__back mb-2"
+    <!-- In the app bar on screens wide enough, leaving the board the height; in the page on phones, where it would not fit. -->
+    <teleport
+      defer
+      :to="pageSlotTarget"
+      :disabled="!headerInAppBar"
+    >
+      <v-skeleton-loader
+        v-if="loading"
+        type="heading"
+        max-width="480"
+        class="board-view__skeleton"
+      />
+
+      <div
+        v-else-if="board"
+        class="board-view__header"
       >
-        My Boards
-      </v-btn>
-
-      <div class="board-view__header mb-4">
-        <v-text-field
-          v-if="editingTitle"
-          v-model="titleDraft"
-          class="board-view__title-field"
-          aria-label="Board title"
-          variant="outlined"
-          density="compact"
-          :counter="titleMaxLength"
-          :error-messages="titleError ?? undefined"
-          :loading="renaming"
-          :readonly="renaming"
-          hide-details="auto"
-          autofocus
-          @keydown.enter.prevent="saveTitle"
-          @keydown.esc.prevent="cancelTitleEdit"
-          @blur="saveTitle"
-        />
-        <h1
-          v-else
-          class="board-view__heading text-h4 ma-0"
-        >
-          <button
-            type="button"
-            class="board-view__title"
-            title="Rename board"
-            @click="startTitleEdit"
-          >
-            {{ board.title }}
-            <v-icon
-              icon="mdi-pencil-outline"
-              size="x-small"
-              class="board-view__title-icon"
-            />
-          </button>
-        </h1>
-
-        <div
-          v-if="saveStatus"
-          class="board-view__status text-body-2"
-          role="status"
-          :title="saveStatus.text"
-        >
-          <v-icon
-            :icon="saveStatus.icon"
-            :color="saveStatus.color"
-            size="small"
+        <div class="board-view__identity">
+          <v-text-field
+            v-if="editingTitle"
+            v-model="titleDraft"
+            class="board-view__title-field"
+            aria-label="Board title"
+            variant="outlined"
+            density="compact"
+            :counter="titleMaxLength"
+            :error-messages="titleError ?? undefined"
+            :loading="renaming"
+            :readonly="renaming"
+            hide-details="auto"
+            autofocus
+            @keydown.enter.prevent="saveTitle"
+            @keydown.esc.prevent="cancelTitleEdit"
+            @blur="saveTitle"
           />
-          <span :class="['board-view__status-text', saveStatus.textClass]">{{ saveStatus.text }}</span>
-          <v-btn
-            v-if="saveFailed"
-            variant="text"
-            size="small"
-            density="comfortable"
-            @click="saveNow"
+          <h1
+            v-else
+            class="board-view__heading ma-0"
           >
-            Retry
-          </v-btn>
+            <button
+              type="button"
+              class="board-view__title"
+              :title="`Rename ${board.title}`"
+              @click="startTitleEdit"
+            >
+              <span class="board-view__title-text">{{ board.title }}</span>
+              <v-icon
+                icon="mdi-pencil-outline"
+                size="x-small"
+                class="board-view__title-icon"
+              />
+            </button>
+          </h1>
+
+          <v-btn
+            icon="mdi-trash-can-outline"
+            variant="text"
+            density="comfortable"
+            :aria-label="`Delete ${board.title}`"
+            class="board-view__delete"
+            :class="{'board-view__delete--alone': !saveStatus}"
+            @click="deleteDialogOpen = true"
+          />
+
+          <div
+            v-if="saveStatus"
+            class="board-view__status text-body-2"
+            :class="{'board-view__status--failed': saveFailed}"
+            role="status"
+            :title="saveStatus.text"
+          >
+            <v-icon
+              :icon="saveStatus.icon"
+              :color="saveStatus.color"
+              size="small"
+            />
+            <span :class="['board-view__status-text', saveStatus.textClass]">{{ saveStatus.text }}</span>
+            <v-btn
+              v-if="saveFailed"
+              variant="text"
+              size="small"
+              density="comfortable"
+              @click="saveNow"
+            >
+              Retry
+            </v-btn>
+          </div>
         </div>
-
-        <v-btn
-          icon="mdi-trash-can-outline"
-          variant="text"
-          :aria-label="`Delete ${board.title}`"
-          class="board-view__delete"
-          :class="{'board-view__delete--alone': !saveStatus}"
-          @click="deleteDialogOpen = true"
-        />
       </div>
+    </teleport>
 
+    <template v-if="board && !loading">
       <delete-board-dialog
         v-model="deleteDialogOpen"
         :board-title="board.title"
@@ -105,7 +123,7 @@
     </template>
 
     <v-alert
-      v-else-if="errorMessage"
+      v-else-if="errorMessage && !loading"
       type="error"
       variant="tonal"
     >
@@ -121,7 +139,7 @@
     </v-alert>
 
     <v-empty-state
-      v-else
+      v-else-if="!loading"
       icon="mdi-file-question-outline"
       title="Board not found"
       text="This board doesn't exist, or you don't have access to it."
@@ -152,6 +170,7 @@ import {debounce} from '@/utils/debounce';
 import {isSameWriting} from '@/utils/inks';
 import {boardTitleRules, firstValidationError} from '@/utils/validation';
 import {BOARD_MIN_SAVE_INTERVAL_MS, BOARD_TITLE_MAX_LENGTH} from '@/constants/board';
+import {APP_BAR_PAGE_SLOT_ID} from '@/constants/appBar';
 import {RouteName} from '@/router/routes';
 import {useBoardsStore} from '@/stores/boards';
 import {useSettingsStore} from '@/stores/settings';
@@ -225,11 +244,17 @@ export default defineComponent({
       renaming: false,
       titleMaxLength: BOARD_TITLE_MAX_LENGTH,
       deleteDialogOpen: false,
+      pageSlotTarget: `#${APP_BAR_PAGE_SLOT_ID}`,
     };
   },
 
   computed: {
     ...mapStores(useBoardsStore, useSettingsStore),
+
+    /** Whether the screen is wider than a phone held upright. */
+    headerInAppBar(): boolean {
+      return this.$vuetify.display.smAndUp;
+    },
 
     saving(): boolean {
       return this.runningSave !== null;
@@ -468,16 +493,38 @@ $phone-title-size: 1.5rem;
     margin-left: -12px;
   }
 
-  // One row: a long title wraps its own text, so the status and delete button stay across from it.
+  // The title and delete button, which the status sits beside rather than among, so they stay put as it comes and goes.
+  // A long title is cut short, so everything stays on one row.
   &__header {
     display: flex;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  &__identity {
+    position: relative;
+    display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 4px 8px;
+    min-width: 0;
+  }
+
+  &__skeleton {
+    background: transparent;
   }
 
   &__heading {
     min-width: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.5;
     overflow-wrap: anywhere;
+  }
+
+  &__title-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &__status {
@@ -485,33 +532,86 @@ $phone-title-size: 1.5rem;
     flex-shrink: 0;
     align-items: center;
     gap: 6px;
-    margin-left: auto;
   }
 
-  // Phones: a smaller title, and a status showing only its icon, so both fit on one row and leave the board the screen.
-  // The status text is still read out and shown on hover.
-  @media (max-width: 599.98px) {
+  // Shows only its icon, to keep it small beside the title. The text is still read out and shown on hover.
+  &__status-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  // In the app bar. The header's padding keeps room for the status on the right, and matches it on the left to stay centered.
+  @media (min-width: 600px) {
     &__header {
-      gap: 8px;
+      padding-inline: 32px;
     }
 
-    // `!important` to beat Vuetify's `text-h4` utility, which uses it.
+    &__skeleton {
+      width: 240px;
+    }
+
+    &__status {
+      position: absolute;
+      left: 100%;
+      margin-left: 8px;
+      white-space: nowrap;
+    }
+
+    // With its Retry button, too long to fit beside the title, and rare enough that moving the title for it does no harm.
+    &__status--failed {
+      position: static;
+      margin-left: 0;
+    }
+  }
+
+  // Phones: the header stays in the page, across from a title that wraps, with its status before the delete button.
+  @media (max-width: 599.98px) {
+    &__header {
+      flex: 0 0 auto;
+      gap: 4px 8px;
+      align-items: center;
+      justify-content: flex-start;
+      margin-bottom: 16px;
+    }
+
+    &__identity {
+      display: contents;
+    }
+
+    &__skeleton {
+      flex: 0 0 auto;
+      margin-bottom: 16px;
+    }
+
     &__heading {
-      font-size: $phone-title-size !important;
-      line-height: 1.25 !important;
+      font-size: $phone-title-size;
+      line-height: 1.25;
+    }
+
+    &__title-text {
+      white-space: normal;
     }
 
     &__title-field :deep(input) {
       font-size: $phone-title-size;
     }
 
-    &__status-text {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
+    &__status {
+      order: 1;
+      margin-left: auto;
+    }
+
+    &__delete {
+      order: 2;
+    }
+
+    // Keeps the delete button across from the title when there is no save status to push it there.
+    &__delete--alone {
+      margin-left: auto;
     }
   }
 
@@ -525,14 +625,12 @@ $phone-title-size: 1.5rem;
     flex-shrink: 0;
   }
 
-  // Keeps the delete button across from the title when there is no save status to push it there.
-  &__delete--alone {
-    margin-left: auto;
-  }
-
+  // The padding gives the hover background room, and the negative margins keep the text in line with what is around it.
+  // The heading's natural width leaves out the margins, so the limit adds them back, or a title with room would be cut short.
   &__title {
     display: inline-flex;
     align-items: center;
+    max-width: calc(100% + 8px);
     gap: 8px;
     padding: 0 4px;
     margin: 0 -4px;
@@ -567,13 +665,28 @@ $phone-title-size: 1.5rem;
 
   // Written at the heading's size, so the title does not shrink when clicked.
   &__title-field {
-    flex: 1 1 320px;
-    max-width: 640px;
+    position: relative;
+    flex: 1 1 auto;
+    width: 320px;
+    min-width: 0;
 
     :deep(input) {
-      font-size: 2.125rem;
+      font-size: 1.25rem;
       font-weight: 700;
-      letter-spacing: -0.01em;
+    }
+
+    // Hangs below the field rather than stretching the row, which in the app bar has a fixed height.
+    @media (min-width: 600px) {
+      :deep(.v-input__details) {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        left: 0;
+        z-index: 1;
+        padding: 2px 12px;
+        border-radius: 0 0 4px 4px;
+        background: rgb(var(--v-theme-surface));
+      }
     }
   }
 }

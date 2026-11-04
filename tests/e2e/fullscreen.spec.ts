@@ -86,17 +86,21 @@ test.describe('full screen', () => {
     await expect.poll(() => browserIsFullscreen(page)).toBe(true);
 
     // Later than an exit the browser forces straight after entering.
-    await page.waitForTimeout(2_100);
+    await page.waitForTimeout(600);
     await page.evaluate(() => document.exitFullscreen());
 
     await expect(enterButton(page)).toBeVisible();
   });
 
   test('stays filling the window when the browser forces an exit straight after entering, as iPad Safari does', async ({page}) => {
-    await enterButton(page).click();
-    await expect.poll(() => browserIsFullscreen(page)).toBe(true);
+    // Exits from the event itself, so the test does not depend on how quickly it can follow the browser.
+    await page.evaluate(() => {
+      document.addEventListener('fullscreenchange', () => {
+        void document.exitFullscreen();
+      }, {once: true});
+    });
 
-    await page.evaluate(() => document.exitFullscreen());
+    await enterButton(page).click();
     await expect.poll(() => browserIsFullscreen(page)).toBe(false);
 
     await expect(exitButton(page)).toBeVisible();

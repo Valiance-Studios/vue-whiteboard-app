@@ -51,7 +51,7 @@ import {isHexColor} from '@/utils/color';
  * Leaving browser full screen this soon after entering was not the user's doing: iPad Safari drops out
  * as soon as an editable element has focus, and the board's editor always does.
  */
-const FORCED_FULLSCREEN_EXIT_MS = 2000;
+const FORCED_FULLSCREEN_EXIT_MS = 500;
 
 /**
  * The board's writing surface and its marker tray. `writing` is only read when the sheet is created;
