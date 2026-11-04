@@ -53,6 +53,9 @@ import {isHexColor} from '@/utils/color';
  */
 const FORCED_FULLSCREEN_EXIT_MS = 1000;
 
+/** Matches a device whose main input is a finger, so it relies on an on-screen keyboard. */
+const TOUCH_SCREEN_QUERY = '(pointer: coarse)';
+
 /**
  * The board's writing surface and its marker tray. `writing` is only read when the sheet is created;
  * give the sheet a new `key` to show different writing.
@@ -180,7 +183,18 @@ export default defineComponent({
 
     pickMarker(ink: MarkerInk): void {
       this.ink = ink;
-      this.editor?.chain().focus().setInk(ink).run();
+      this.returnCaretToBoard();
+      this.editor?.commands.setInk(ink);
+    },
+
+    /**
+     * Lets the user carry on writing after using the tray, except on touch screens, where focusing the
+     * editor would bring back an on-screen keyboard they closed. Tapping the board brings it up when wanted.
+     */
+    returnCaretToBoard(): void {
+      if (!window.matchMedia(TOUCH_SCREEN_QUERY).matches) {
+        this.editor?.commands.focus();
+      }
     },
 
     /** Changes the RGB marker's color, leaving focus alone. If it is in hand, the selected text and whatever is written next take the new color. */
@@ -195,7 +209,7 @@ export default defineComponent({
 
     finishCustomColor(): void {
       this.saveCustomColor();
-      this.editor?.commands.focus();
+      this.returnCaretToBoard();
     },
 
     saveCustomColor(): void {
