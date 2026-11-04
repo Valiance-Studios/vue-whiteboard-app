@@ -21,7 +21,10 @@
       <!-- About and the theme toggle are always at the right edge; once signed in, the account controls follow them. -->
       <template #append>
         <about-dialog />
-        <theme-toggle :class="{'me-2': authStore.user}" />
+        <theme-toggle
+          :class="{'me-2': authStore.user}"
+          @change="settingsStore.setThemeChoice"
+        />
 
         <template v-if="authStore.user">
           <!-- The photo is in the slot because v-avatar ignores its `image` prop whenever a slot is given. -->
@@ -77,12 +80,16 @@
 </template>
 
 <script lang="ts">
+import type {ThemeChoice} from '@/theme/themePreference';
+
 import {defineComponent} from 'vue';
 import {mapStores} from 'pinia';
 import AboutDialog from '@/components/AboutDialog.vue';
 import ThemeToggle from '@/components/ThemeToggle.vue';
+import vuetify from '@/plugins/vuetify';
 import {useAuthStore} from '@/stores/auth';
 import {useBoardsStore} from '@/stores/boards';
+import {useSettingsStore} from '@/stores/settings';
 import {RouteName} from '@/router';
 
 export default defineComponent({
@@ -100,7 +107,11 @@ export default defineComponent({
   },
 
   computed: {
-    ...mapStores(useAuthStore, useBoardsStore),
+    ...mapStores(useAuthStore, useBoardsStore, useSettingsStore),
+
+    sessionUid(): string | null {
+      return this.authStore.user?.uid ?? null;
+    },
 
     userName(): string {
       const user = this.authStore.user;
@@ -110,6 +121,21 @@ export default defineComponent({
 
     userInitial(): string {
       return this.userName.charAt(0).toUpperCase();
+    },
+  },
+
+  watch: {
+    sessionUid: {
+      handler(): void {
+        void this.settingsStore.load();
+      },
+      immediate: true,
+    },
+
+    'settingsStore.themeChoice'(choice: ThemeChoice | null): void {
+      if (choice) {
+        void vuetify.theme.change(choice);
+      }
     },
   },
 

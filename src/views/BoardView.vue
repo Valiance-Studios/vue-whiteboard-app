@@ -98,7 +98,9 @@
         :key="board.id"
         class="board-view__sheet"
         :writing="board"
+        :custom-marker-color="settingsStore.customMarkerColor"
         @change="onWritingChange"
+        @custom-marker-color-change="settingsStore.setCustomMarkerColor"
       />
     </template>
 
@@ -152,6 +154,7 @@ import {boardTitleRules, firstValidationError} from '@/utils/validation';
 import {BOARD_MIN_SAVE_INTERVAL_MS, BOARD_TITLE_MAX_LENGTH} from '@/constants/board';
 import {RouteName} from '@/router/routes';
 import {useBoardsStore} from '@/stores/boards';
+import {useSettingsStore} from '@/stores/settings';
 
 /** How long typing pauses before the board is saved. */
 const SAVE_DEBOUNCE_MS = 800;
@@ -226,7 +229,7 @@ export default defineComponent({
   },
 
   computed: {
-    ...mapStores(useBoardsStore),
+    ...mapStores(useBoardsStore, useSettingsStore),
 
     saving(): boolean {
       return this.runningSave !== null;

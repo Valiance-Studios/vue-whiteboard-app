@@ -27,13 +27,13 @@ service cloud.firestore {
       return stamp.uid == request.auth.uid && stamp.time == request.time;
     }
 
-    // Marker color runs, e.g. `blue:24,red:7`. Whether they match the text's length cannot be checked here,
+    // Marker color runs, e.g. `blue:24,#d81b60:7`, where a lowercase hex color is writing from the RGB marker. Whether they match the text's length cannot be checked here,
     // so the client reads mismatched runs as the default ink.
     // Keep the inks in sync with MARKER_INKS in src/constants/markers.ts, and the max length with BOARD_INKS_MAX_LENGTH.
     function isValidInks(inks) {
       return inks is string
         && inks.size() <= 20000
-        && inks.matches('((black|blue|red|green|purple|orange):[1-9][0-9]{0,5}(,(black|blue|red|green|purple|orange):[1-9][0-9]{0,5})*)?');
+        && inks.matches('((black|blue|red|green|purple|orange|#[0-9a-f]{6}):[1-9][0-9]{0,5}(,(black|blue|red|green|purple|orange|#[0-9a-f]{6}):[1-9][0-9]{0,5})*)?');
     }
 
     function hasValidFields(data) {
@@ -80,6 +80,22 @@ service cloud.firestore {
         && request.auth.uid == uid
         && isValidAccessRequest(request.resource.data)
         && request.time > resource.data.requestedAt + duration.value(1, 'm');
+    }
+
+    // Keep in sync with UserSettings in src/types/settings.ts. Saves change single fields, so any field may be absent.
+    function isValidUserSettings(data) {
+      return data.keys().hasOnly(['themeChoice', 'customMarkerColor'])
+        && (!('themeChoice' in data) || data.themeChoice in ['light', 'dark'])
+        && (!('customMarkerColor' in data) || (data.customMarkerColor is string && data.customMarkerColor.matches('#[0-9a-f]{6}')));
+    }
+
+    // Each user's own preferences, in a document keyed by their uid.
+    match /userSettings/{uid} {
+      allow get: if isAllowed() && request.auth.uid == uid;
+
+      allow create, update: if isAllowed()
+        && request.auth.uid == uid
+        && isValidUserSettings(request.resource.data);
     }
 
     match /boards/{boardId} {

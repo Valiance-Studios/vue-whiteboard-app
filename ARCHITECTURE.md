@@ -22,7 +22,7 @@ flowchart LR
 
     subgraph browser["Browser"]
         spa["Vue single-page app"]
-        local[("localStorage<br/>demo boards and profile,<br/>theme choice")]
+        local[("localStorage<br/>demo boards and profile,<br/>theme, demo marker color")]
     end
 
     subgraph firebase["Firebase project vs-valiance-studios-dev (shared)"]
@@ -38,7 +38,7 @@ flowchart LR
     hosting -- "serves the bundle" --> spa
     spa -- "demo session" --> local
     spa -- "Google session: sign-in" --> auth
-    spa -- "Google session: boards, allowlist,<br/>access requests" --> firestore
+    spa -- "Google session: boards, settings,<br/>allowlist, access requests" --> firestore
     spa -- "attests the browser" --> recaptcha
     spa -- "exchanges the attestation<br/>for a token" --> appcheck
     appcheck -. "enforced for" .-> auth
@@ -67,8 +67,8 @@ Every diagram in this file, and what it depends on. A change to these sources up
 | Route guard | [Routing](#routing) | `src/router/` |
 | Sign-in sequence | [Sign-In and the Access Check](#sign-in-and-the-access-check) | `src/stores/auth.ts`, `src/firebase/access.ts`, `src/views/LoginView.vue` |
 | Session states | [Session Lifecycle](#session-lifecycle) | `src/stores/auth.ts`, `src/demo/DemoProfileStorage.ts`, `src/types/session.ts` |
-| Repository classes | [Data Access](#data-access) | `src/repositories/`, the data actions in `src/stores/boards.ts` |
-| Firestore entities | [Data Model](#data-model) | `src/repositories/FirestoreBoardRepository.ts`, `src/firebase/access.ts`, `firestore.rules` |
+| Repository classes | [Data Access](#data-access) | `src/repositories/`, the data actions in `src/stores/boards.ts` and `src/stores/settings.ts` |
+| Firestore entities | [Data Model](#data-model) | `src/repositories/FirestoreBoardRepository.ts`, `src/repositories/FirestoreUserSettingsRepository.ts`, `src/firebase/access.ts`, `firestore.rules` |
 | Request checks | [Security](#security) | `firestore.rules`, `src/firebase/appCheck.ts`, App Check enforcement |
 | Writing conversions | [Board Editing and Saving](#board-editing-and-saving) | `src/editor/`, `src/utils/inks.ts`, `src/types/board.ts` |
 | Save sequence | [Board Editing and Saving](#board-editing-and-saving) | `src/views/BoardView.vue`, `src/components/WhiteboardSheet.vue`, `saveBoardWriting` |
@@ -89,7 +89,8 @@ flowchart TD
     editor["editor/<br/>Tiptap extensions and conversion"]
     authStore["stores/auth<br/>session, access check, demo entry"]
     boardsStore["stores/boards<br/>loaded boards, search"]
-    repos["repositories/<br/>BoardRepository, createBoardRepository"]
+    settingsStore["stores/settings<br/>theme, RGB marker color"]
+    repos["repositories/<br/>board and settings storage,<br/>one factory for each"]
     demo["demo/<br/>profile storage, sample boards"]
     fb["firebase/<br/>app, auth, db, App Check, access"]
     shared["types/, constants/, utils/, theme/<br/>shared by every layer"]
@@ -98,14 +99,18 @@ flowchart TD
     main --> router
     app --> authStore
     app --> boardsStore
+    app --> settingsStore
     router --> views
     router --> authStore
     views --> components
     views --> authStore
     views --> boardsStore
+    views --> settingsStore
     components --> editor
     boardsStore --> authStore
     boardsStore --> repos
+    settingsStore --> authStore
+    settingsStore --> repos
     authStore --> demo
     authStore --> fb
     authStore -- "clearDemoBoards" --> repos
@@ -244,11 +249,48 @@ classDiagram
     useBoardsStore ..> createBoardRepository: one per call
 ```
 
+Settings follow the same pattern, with one difference: there is also a browser implementation for having no session at all, since the theme toggle is on the login page too.
+
+```mermaid
+classDiagram
+    class UserSettingsRepository {
+        <<interface>>
+        +load() UserSettings
+        +save(changes)
+    }
+    class FirestoreUserSettingsRepository {
+        +constructor(db, uid)
+    }
+    class LocalStorageUserSettingsRepository {
+        +constructor(storage)
+    }
+    class createUserSettingsRepository {
+        <<factory>>
+        +createUserSettingsRepository(session or null) UserSettingsRepository
+    }
+    class useSettingsStore {
+        <<Pinia store>>
+        +themeChoice
+        +customMarkerColor
+        +load()
+        +setThemeChoice(choice)
+        +setCustomMarkerColor(color)
+    }
+
+    UserSettingsRepository <|.. FirestoreUserSettingsRepository
+    UserSettingsRepository <|.. LocalStorageUserSettingsRepository
+    createUserSettingsRepository ..> FirestoreUserSettingsRepository: Google session
+    createUserSettingsRepository ..> LocalStorageUserSettingsRepository: demo or no session
+    useSettingsStore ..> createUserSettingsRepository: one per call
+```
+
 - **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. `get` returns `null` for a missing board or another user's board; unlike it, the writes reject for a missing or someone else's board, so the view can report the failure. `rename` trims the title and re-stamps `updatedAt`; a Firestore rename is an ordinary update, so the rules check the title and the write interval as for any update.
 - **`FirestoreBoardRepository`**: maps Firestore documents to the domain `Board` and applies the owner filter required by the rules.
 - **`LocalStorageBoardRepository`**: demo mode's implementation (see [Demo Mode](#demo-mode)).
 - **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session. Callers build a repository per use instead of keeping one, so it always matches the current session and no cache has to be invalidated on sign-in or sign-out. Implementations must therefore be **cheap to construct and hold no state between calls**: `FirestoreBoardRepository` is just a uid alongside the shared `db` singleton, and `LocalStorageBoardRepository` reads and writes `localStorage` on each call rather than caching boards in a field.
 - **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call and discards a load that finishes after the session changed. `renameBoard` and `deleteBoard` update the loaded list only after the repository succeeds. `saveBoardWriting(id, writing)`, `renameBoard` and `deleteBoard` let errors propagate, because the views own the save status and dialogs rather than the store.
+- **`useSettingsStore`** (Pinia): the theme choice and the RGB marker's color. `App.vue` calls `load()` whenever the session changes, and applies `themeChoice` to Vuetify. A failed load or save is only logged: a preference still applies for this visit. A session with no saved theme keeps the current one, and with no saved color goes back to the default. A load does not overwrite a choice made while it ran, and is discarded if the session changed.
+- **The theme is always kept in this browser too** (`whiteboard.theme`), whatever the session, because it is needed before the first render, when no session is known yet. So a signed-in user sees their last theme on this device at once, and a theme saved from another device arrives when the settings load. The RGB marker's color is not copied to the browser for Google sessions, so a demo visitor in the same browser never inherits it.
 
 ### Data Model
 
@@ -261,6 +303,7 @@ erDiagram
     AUTH_USER ||--o{ boards : "createdAt.uid is the owner"
     AUTH_USER ||--o| accessRequests : "document id is the uid"
     AUTH_USER |o..o| allowedUsers : "document id is the lowercase email"
+    AUTH_USER ||--o| userSettings : "document id is the uid"
 
     AUTH_USER {
         string uid PK
@@ -272,9 +315,14 @@ erDiagram
         string title "trimmed, 1-100 characters"
         string titleSearchable "lowercase title"
         string content "plain text, lines split by newline"
-        string inks "optional, runs such as blue:24,red:7"
+        string inks "optional, runs such as blue:24,#d81b60:7"
         AuditStamp createdAt "uid and time"
         AuditStamp updatedAt "uid and time"
+    }
+    userSettings {
+        string id PK "uid"
+        string themeChoice "optional, light or dark"
+        string customMarkerColor "optional, lowercase #rrggbb"
     }
     allowedUsers {
         string id PK "lowercase email, no fields"
@@ -290,7 +338,10 @@ erDiagram
 **`boards`**
 
 - `inks` holds the marker color of every character in `content`, as runs (`encodeInks`/`decodeInks` in `src/utils/inks.ts`). Boards without it, or with runs that do not fit `content`, read as the default ink (blue) for the uncovered text rather than failing. A line break takes the ink of the text before it.
+- An ink is a named marker or, for the RGB marker, the lowercase hex color it had when the text was written, so changing the marker later leaves earlier writing as it was. `isMarkerInk` checks stored inks before they reach a `style` attribute.
 - `AuditStamp` is `{ uid: string; time: Timestamp }`: who made the change and when.
+
+**`userSettings`**: one document per user, created on their first change of a setting, holding only the settings they have chosen (`UserSettings` in `src/types/settings.ts`). Saves merge a single field. Demo sessions keep the same settings in `localStorage` instead (`whiteboard.theme`, `whiteboard.customMarkerColor`).
 
 **`allowedUsers`**: the accounts allowed to use Firestore. It is managed by hand in the Firebase console (no client can write to it), and `hasFirestoreAccess` in `src/firebase/access.ts` reads the signed-in user's own entry.
 
@@ -349,9 +400,11 @@ The rules are in `firestore.rules`, covered by tests in `tests/rules/`.
 **Limits**
 
 - `content` is capped at 100,000 characters (`BOARD_CONTENT_MAX_LENGTH`), so no write can approach Firestore's 1 MiB document limit.
-- `inks`, when present, must be well-formed runs of the six known inks and at most 20,000 characters long (`BOARD_INKS_MAX_LENGTH`, about 2,000 color changes). Rules cannot check that the runs add up to the length of `content`; the client tolerates a mismatch.
+- `inks`, when present, must be well-formed runs of the six named inks or lowercase hex colors, and at most 20,000 characters long (`BOARD_INKS_MAX_LENGTH`, about 1,700 to 2,000 color changes). Rules cannot check that the runs add up to the length of `content`; the client tolerates a mismatch.
 - An update must come more than 500 ms after the board's last write (`updatedAt.time`). The first edit after a board is created is exempt (detected by `updatedAt == createdAt`), so writing straight away on a new board, or leaving it right after, is never rejected.
 - Not limited: how many boards a user creates, and reads, which rules cannot rate-limit. The allowlist is the protection for both. A per-user board cap would need a counter document checked with `getAfter()` in a batched write, and is only worth adding if an allowlisted account is abused.
+
+**User settings**: `userSettings/{uid}` may be read and written only by that user, who must be allowlisted, with `themeChoice` (`light` or `dark`) and `customMarkerColor` (lowercase `#rrggbb`) as the only fields, both optional. Listing and deleting are denied. Writes are not rate-limited, since the client writes only on a toggle or on closing the color panel, the document cannot grow, and the allowlist covers abuse.
 
 **Access requests**: `accessRequests/{uid}` may only be written by that signed-in user, with exactly `email` (equal to the token's email), `displayName` (string of at most 200 characters, or null) and `requestedAt` (the server's time), and updated at most once a minute. Clients cannot read, list or delete requests; only the console can.
 
@@ -501,6 +554,7 @@ Last updated 2026-11-03.
 - Board Collection View: in-memory substring search, board grid, create dialog, empty and error states, whiteboard-style cards and a board count.
 - Single Board View: loading by id with loading, not-found and error states; dry-erase styled sheet, debounced auto-save, save status, and a flush when leaving the board.
 - Marker tray and multi-color writing (a Tiptap editor), with colors stored as `inks` runs and shown in the collection previews.
+- An RGB marker, first on the tray: a second click opens a panel with a spectrum and RGB and hex fields. Its color is saved per user.
 - Renaming and deleting boards, from the board cards and from the board page.
 - The board and marker tray stay fixed on screen and the writing scrolls inside the board.
 - A one-row marker tray on phones and tablets, scrolling sideways with full-size markers, and a one-row board header on phones.
@@ -517,6 +571,7 @@ Last updated 2026-11-03.
 *App shell*
 
 - A custom Vuetify theme, with light and dark themes and a toggle in the app bar; follows the system setting until one is picked.
+- A `userSettings` collection holding a signed-in user's theme and RGB marker color; demo visitors keep them in `localStorage`.
 - The marker icon as the tab icon, with PNG fallbacks.
 - The app bar avatar shows the Google profile photo (it had always fallen back to the initial, because `v-avatar` ignores `image` when given a slot).
 - An About dialog in the app bar, on every page, linking to the public repository.
