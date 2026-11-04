@@ -50,7 +50,7 @@ npm run dev         # in another: serves the app at http://localhost:5173
 
 The app runs against the Firebase Local Emulator Suite, so no real Firebase project is needed. Sign in as the seeded Dev User, or use demo mode.
 
-To run locally against the hosted Firebase project instead, use `npm run dev:staging` (config in `.env.staging`). It needs an App Check debug token in a gitignored `.env.staging.local`; see "App Check" in [ARCHITECTURE.md](ARCHITECTURE.md).
+To run locally against the hosted Firebase project instead, use `npm run dev:staging` (config in `.env.staging`). It needs an App Check debug token in a gitignored `.env.staging.local`; see "Debug Token" in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#debug-token).
 
 | Command | What it does |
 | --- | --- |
@@ -62,4 +62,7 @@ To run locally against the hosted Firebase project instead, use `npm run dev:sta
 
 ## Learn More
 
-[ARCHITECTURE.md](ARCHITECTURE.md) covers the design in depth: the data model, access rules, demo mode, deployment, App Check and testing.
+- [ARCHITECTURE.md](ARCHITECTURE.md): the design, with diagrams, covering the layers, sign-in, data model, security, saving and demo mode.
+- [docs/UI.md](docs/UI.md): what each page does and how it looks.
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): setup, env files, testing and known quirks.
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): deploying, and setting up App Check.

@@ -27,7 +27,7 @@ export function findConfigProblems(env: Record<string, string | undefined>, mode
   const missing = REQUIRED.filter((key) => !env[key]);
 
   if (missing.length > 0) {
-    problems.push(`Firebase config is missing: ${missing.join(', ')}. Copy .env.example to .env.${mode} and fill it in from the Firebase console (see ARCHITECTURE.md, "App Check", for the site key).`);
+    problems.push(`Firebase config is missing: ${missing.join(', ')}. Copy .env.example to .env.${mode} and fill it in from the Firebase console (see docs/DEPLOYMENT.md, "App Check Setup", for the site key).`);
   }
 
   if (env.VITE_USE_FIREBASE_EMULATORS === 'true') {
