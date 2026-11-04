@@ -1,0 +1,52 @@
+# UI Behavior and Styling
+
+What each page does and how it looks. For how the pieces fit together, see [ARCHITECTURE.md](../ARCHITECTURE.md); it also covers the route guard, sign-in and how writing is saved.
+
+## App Bar
+
+Every page shares an app bar with the marker logo on the left and, on the right, an About button and the theme toggle. Once signed in, the toggle is followed by the user's Google photo (or initial, when the account has no photo) and name, a "Demo" chip in demo mode, and Sign out. On phones the name is hidden, Sign out shows only its icon (keeping "Sign out" as its accessible name) at icon width, and the title is slightly smaller, so the whole title still fits at 360px wide.
+
+The About button (`AboutDialog`, labelled "About this app") opens a short explanation for visitors such as recruiters: what the app is, a few engineering highlights, the tech stack, and a link to the public GitHub repository. Usage help lives on the "A Quick Tour" sample board instead (see "Demo Mode" in [ARCHITECTURE.md](../ARCHITECTURE.md#demo-mode)), so the dialog does not repeat it. Its text is a shorter version of `README.md`; keep the two consistent when either changes. Both have an "On the Horizon" section naming planned features (currently sketch mode, under "Later" in Project Status), so update them when those plans change.
+
+## Login View (`/login`)
+
+- Google sign-in via Firebase Authentication. Unauthenticated users are redirected here by the global route guard; after sign-in they return to the route they originally requested.
+- A **Demo Mode** button below Google sign-in starts demo mode. `/demo` starts it without showing this page.
+- Only allowlisted accounts get a session. Anyone else is signed straight back out, on sign-in and on page load alike, and the page says which account has no access. The denied sign-in is recorded in `accessRequests` for the owner, and the page adds "Your request has been recorded for the app's owner." when that write succeeded.
+
+## Board Collection View (`/boards`)
+
+- Displays a searchable grid of the boards the signed-in user has created (other users' boards are never listed).
+- **Cards**: each previews the board as a small framed whiteboard in the marker font and the writing's own marker colors (the first 400 characters are rendered), with the title and last update below.
+- **Header**: the heading with a board count beside it ("6 boards", or "2 of 6 boards" while searching) on the left, and the search field on the right.
+- **Search**: filters by normalized lowercase title (`titleSearchable`). All of the user's boards are loaded once and filtered **in memory**, so a search matches anywhere in the title (case-insensitive), updates instantly, and costs no extra Firestore reads. Results are sorted by title (case-insensitive, numeric-aware, so "Sprint 9" comes before "Sprint 10"). The search term is kept while navigating to a board and back.
+- Revisit if users have very many or very large boards: listing downloads every board's full content. Possible next steps would be moving `content` to a separate document so the list stays small, then pagination plus a search service.
+- **Creating**: starts from a dashed **New board** tile, the first item in the grid (a slim row on phones, so it does not push the boards off screen). It is hidden while searching, so only matching boards show. A user with no boards sees the "No boards yet" empty state instead, whose button is also labeled "New board". A dialog asks for the title (required, max 100 characters); after creation the user is taken to the new board.
+- **Renaming and deleting**: each card has a pencil button (renames the board in the same title dialog, `BoardTitleDialog`, prefilled) and a trash button (deletes it after a confirmation, `DeleteBoardDialog`). The card is not itself a link, since a link cannot contain buttons: its title is the link, stretched over the card with an `::after` overlay, and the buttons sit above that overlay.
+- Empty states distinguish "no boards yet" from "no boards match the search".
+
+## Single Board View (`/boards/:id`)
+
+- Dynamic route loading a specific whiteboard. The board is fetched by the `id` route param, and the heading shows the board's title (a skeleton is shown while loading, never the id).
+- Only the board's owner may open it. A board that is missing or owned by someone else is treated identically (Firestore denies both): the view shows a "board not found" message with a link back to `/boards`.
+- A "My Boards" link above the title returns to the collection.
+- **Renaming**: clicking the title (a button inside the `h1`, with a pencil that appears on hover) turns it into a text field at the heading's size. Enter or leaving the field saves; Escape cancels; an unchanged title just closes it. A blank or too-long title, or a failed save, keeps the field open with the message under it.
+- **Deleting**: a trash button across from the title, after a confirmation. It drops any unsaved writing, lets a save already running finish, deletes the board and returns to the collection.
+- **Save status**: next to the title, it reads "Saving…", "All changes saved", or an error with a Retry button. It stays empty on a board the user only reads. A Firestore write made while offline stays pending rather than failing, so the status reads "Saving…" until the connection returns; the error state is for rejected writes, such as a board that was deleted.
+- **Header layout**: the title, status and delete button share one row at every width: a long title wraps its own text. On phones the title is smaller (1.5rem, and the rename field matches) and the status shows only its icon; its text stays in the `role="status"` element for screen readers and is the tooltip.
+- **Whiteboard**: `WhiteboardSheet` is styled to resemble a physical dry-erase board (aluminium frame, glossy sheen) with a marker font. The font stack uses faces already installed on macOS and Windows, so the board needs no web font.
+- **Fixed board, scrolling writing**: the view exactly fills the window under the app bar (`100dvh` minus Vuetify's `--v-layout-top`), and the sheet takes the height left under the header. The frame, sheen and marker tray stay in place; only the writing inside the frame scrolls (`whiteboard-sheet__writing`), and the editor stretches to the bottom of the board so clicking anywhere on it places the caret. On a window too short for an 18rem board, the page scrolls instead. The writing keeps its font size; this is not the scaled fixed-size board of PR #17.
+- **Marker tray** (`MarkerTray`): an aluminium ledge under the board holding six markers (black, blue, red, green, purple, orange; `src/constants/markers.ts`). The marker in hand is lifted and named ("Marker · Red"). Picking one recolors the selected text, if any, and colors everything written from then on, so a board can mix colors. Each visit starts with blue.
+- **Marker tray layout**: the markers always stay on one row at full size: where they do not fit beside the label they take their own row, which scrolls sideways (on phones and tablets). The row is padded, with matching negative margins, so a scroll container does not clip the lifted marker, its shadow or the focus ring. A marker that gets focus or is picked is scrolled fully into view (`reveal`), since browsers do not scroll to a partly visible element on focus and a tap never focuses one. On phones (under 600px) the tray's padding and label are slimmer, so the tray is about 80px tall.
+- Free writing or drawing with the mouse or a touch screen is not supported for now (see "Later" in Project Status).
+
+## Styling
+
+- **Themes**: two Vuetify themes, `light` and `dark` (`src/plugins/vuetify.ts`). Light sets marker blue `#1f3b73` as `primary` on a cool-grey background; dark lightens it to `#9bb7ee` (with dark text on it) on near-black surfaces.
+- **Theme toggle** (`ThemeToggle`): a sun/moon button in the app bar, always just right of About. Until the visitor picks a theme the app follows the system setting (`defaultTheme: 'system'`, which tracks changes live); a pick is saved to `localStorage` (`whiteboard.theme`, `src/theme/themePreference.ts`) and wins over the system from then on. The saved theme is read when Vuetify is created, before the first render, so it never flashes the other theme.
+- **Tab icon** (`public/favicon.svg`, linked from `index.html`): the same `mdi-marker` icon as the app bar, copied as an SVG path from `@mdi/svg` 7.4.47 to match the installed `@mdi/font`. It follows the system color scheme, not the in-app toggle (a favicon cannot see the page's theme): marker blue normally, the dark theme's lighter blue when the system is dark, so it stays visible on dark tab bars.
+- **PNG icon fallbacks** cover browsers that skip SVG tab icons (Safari): `favicon-32.png` (linked with `sizes="32x32"`, so SVG-capable browsers still prefer the SVG) and `apple-touch-icon.png` (180 px, for Safari and iOS bookmarks and home screens). A PNG cannot follow the color scheme, so both draw the marker on a white tile. They are generated from the SVG by `npm run icons` (`scripts/generate-icons.ts`, rendering with Playwright's Chromium); rerun it and commit the PNGs whenever the SVG changes.
+- **The boards stay white in the dark theme**: they are whiteboards, and the marker inks are chosen for white. So anything drawn on a board (e.g. the card's "Empty board") sets its own color rather than inheriting the theme's text color, which is light in the dark theme.
+- **Translucent theme colors**: Vuetify's theme variables are comma-separated channels (`--v-theme-primary: 31,59,115`), so a translucent theme color is `rgba(var(--v-theme-primary), 0.08)`. The slash form, `rgb(var(--v-theme-primary) / 8%)`, mixes the two syntaxes; browsers drop it silently and the color never shows.
+- **Dry-erase look**: the marker font stack, aluminium frame and glossy surface live in `src/styles/_board.scss`. Marker colors live in code (`src/constants/markers.ts`), because the editor and the previews need them there. Components pull the styles in with `@use '@/styles/board';` (the `@/` alias works in Sass too), so the board view and the collection's previews cannot drift apart.
+- **README screenshot**: `docs/screenshots/boards.png`, taken from `/demo` against the local dev server; retake it when the collection view changes noticeably.

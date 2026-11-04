@@ -23,7 +23,7 @@ export interface BoardWriting {
 export interface Board extends BoardWriting {
   id: string;
   title: string;
-  /** Lowercase copy of `title`, used for prefix search. */
+  /** Lowercase copy of `title`, used for searching anywhere in the title. */
   titleSearchable: string;
   createdAt: AuditStamp;
   updatedAt: AuditStamp;

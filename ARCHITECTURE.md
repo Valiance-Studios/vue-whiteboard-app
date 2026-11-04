@@ -1,265 +1,533 @@
 # Whiteboard App Architecture
 
-## Tech Stack
+How the app is put together, and the main handoff document between sessions. Current status and what comes next are under [Project Status](#project-status).
+
+## Documentation Map
+
+| Document | Read it for |
+| --- | --- |
+| [README.md](README.md) | The public introduction for visitors: demo link, features, highlights, quick start. |
+| **ARCHITECTURE.md** (this file) | How the system is designed, with diagrams: layers, sessions, data, security, saving, demo mode, delivery, status. |
+| [docs/UI.md](docs/UI.md) | What each page does and how it looks: views, app bar, responsive behavior, theming. |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Machine setup, running locally, env files, tests, linting, known quirks. |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deploying, and App Check console setup and debug tokens. |
+
+## System Overview
+
+A single-page Vue app with no backend of its own: the browser talks directly to Firebase, and the security rules are what protect the data. Visitors without an account use demo mode, which stores everything in the browser and never touches Firestore.
+
+```mermaid
+flowchart LR
+    user([Visitor])
+
+    subgraph browser["Browser"]
+        spa["Vue single-page app"]
+        local[("localStorage<br/>demo boards and profile,<br/>theme choice")]
+    end
+
+    subgraph firebase["Firebase project vs-valiance-studios-dev (shared)"]
+        hosting["Hosting<br/>site vs-valiance-studios-dev-whiteboard"]
+        auth["Authentication<br/>Google sign-in"]
+        firestore[("Firestore<br/>named database vue-whiteboard-app")]
+        appcheck["App Check"]
+    end
+
+    recaptcha["reCAPTCHA Enterprise"]
+
+    user --> spa
+    hosting -- "serves the bundle" --> spa
+    spa -- "demo session" --> local
+    spa -- "Google session: sign-in" --> auth
+    spa -- "Google session: boards, allowlist,<br/>access requests" --> firestore
+    spa -- "attests the browser" --> recaptcha
+    spa -- "exchanges the attestation<br/>for a token" --> appcheck
+    appcheck -. "enforced for" .-> auth
+    appcheck -. "enforced for" .-> firestore
+```
+
+### Tech Stack
 
 - Vue 3 (Options API) + TypeScript
 - Vuetify 4 (UI component library)
-- Vue Router 5 (Multi-view navigation)
+- Vue Router 5 (multi-view navigation)
 - Tiptap 3 (the board's rich-text editor, used only for marker colors)
-- Pinia 4 (State management, using Options-style stores)
-- Firebase Authentication (Google sign-in)
-- Firebase Firestore (Cloud database)
-- Vite (Build tooling) - single app, no monorepo/workspace (no backend services are planned)
-- Vitest (Unit testing) + Vue Test Utils
-- Playwright (End-to-end testing)
-- Eslint 10 (Linting)
+- Pinia 4 (state management, using Options-style stores)
+- Firebase Authentication (Google sign-in), Firestore (cloud database), App Check and Hosting
+- Vite (build tooling): a single app, with no monorepo or workspace, since no backend services are planned
+- Vitest + Vue Test Utils (unit testing), Playwright (end-to-end testing), ESLint 10 (linting)
 
-TypeScript is pinned to the 6.x line: TypeScript 7 (native compiler) does not expose the JS compiler API that `vue-tsc` requires.
+### Diagram Index
 
-## Views & Navigation
+Every diagram in this file, and what it depends on. A change to these sources updates the matching diagram in the same pull request.
 
-0. **Login View (`/login`)**
-   - Google sign-in via Firebase Authentication.
-   - Unauthenticated users are redirected here by a global route guard; after sign-in they return to the route they originally requested.
-   - A **Demo Mode** button below Google sign-in starts demo mode (see "Demo Mode"). `/demo` starts it without showing this page.
-   - Only allowlisted accounts get a session (see "Access Rules"). Anyone else is signed straight back out, on sign-in and on page load alike, and the page says which account has no access. The denied sign-in is recorded in `accessRequests` for the owner (see below), and the page adds "Your request has been recorded for the app's owner." when that write succeeded.
-1. **Board Collection View (`/boards`)**
-   - Displays a searchable grid of the boards the signed-in user has created (other users' boards are never listed).
-   - Each card previews the board as a small framed whiteboard in the marker font and the writing's own marker colors (the first 400 characters are rendered), with the title and last update below. The header has the heading with a board count beside it ("6 boards", or "2 of 6 boards" while searching) on the left, and the search field on the right.
-   - Includes a search bar filtering by normalized lowercase title (`titleSearchable`). All of the user's boards are loaded once and filtered **in memory**, so a search matches anywhere in the title (case-insensitive), updates instantly, and costs no extra Firestore reads. Results are sorted by title (case-insensitive, numeric-aware, so "Sprint 9" comes before "Sprint 10"). The search term is kept while navigating to a board and back.
-   - Revisit if users have very many or very large boards: listing downloads every board's full content. Possible next steps would be moving `content` to a separate document so the list stays small, then pagination plus a search service.
-   - Creating a board starts from a dashed **New board** tile, the first item in the grid (a slim row on phones, so it does not push the boards off screen). It is hidden while searching, so only matching boards show. A user with no boards sees the "No boards yet" empty state instead, whose button is also labeled "New board".
-   - Dialog modal to create new boards (title required, max 100 characters). After creation the user is taken to the new board.
-   - Each card has a pencil button (renames the board in the same title dialog, `BoardTitleDialog`, prefilled) and a trash button (deletes it after a confirmation, `DeleteBoardDialog`). The card is not itself a link, since a link cannot contain buttons: its title is the link, stretched over the card with an `::after` overlay, and the buttons sit above that overlay.
-   - Empty states distinguish "no boards yet" from "no boards match the search".
-2. **Single Board View (`/boards/:id`)**
-   - Dynamic route loading a specific whiteboard. The board is fetched by the `id` route param, and the heading shows the board's title (a skeleton is shown while loading, never the id).
-   - Only the board's owner may open it. A board that is missing or owned by someone else is treated identically (Firestore denies both): the view shows a "board not found" message with a link back to `/boards`.
-   - A "My Boards" link above the title returns to the collection.
-   - **Renaming**: clicking the title (a button inside the `h1`, with a pencil that appears on hover) turns it into a text field at the heading's size. Enter or leaving the field saves; Escape cancels; an unchanged title just closes it. A blank or too-long title, or a failed save, keeps the field open with the message under it. A rename is a write like any save, so it first waits for pending writing (`flushSave`) and the rules' 500 ms gap after the last write.
-   - **Deleting**: a trash button across from the title, after a confirmation. It drops any unsaved writing, lets a save already running finish, deletes the board and returns to the collection.
-   - `save()` returns the save in progress (`runningSave`) instead of returning at once when one is running, so renaming, deleting and leaving the board can all wait for it.
-   - `WhiteboardSheet` is styled to resemble a physical dry-erase board (aluminium frame, glossy sheen) with a marker font. The font stack uses faces already installed on macOS and Windows, so the board needs no web font.
-   - **Fixed board, scrolling writing**: the view exactly fills the window under the app bar (`100dvh` minus Vuetify's `--v-layout-top`), and the sheet takes the height left under the header. The frame, sheen and marker tray stay in place; only the writing inside the frame scrolls (`whiteboard-sheet__writing`), and the editor stretches to the bottom of the board so clicking anywhere on it places the caret. On a window too short for an 18rem board, the page scrolls instead. The writing keeps its font size; this is not the scaled fixed-size board of PR #17.
-   - **Marker tray** (`MarkerTray`): an aluminium ledge under the board holding six markers (black, blue, red, green, purple, orange; `src/constants/markers.ts`). The marker in hand is lifted and named ("Marker · Red"). Picking one recolors the selected text, if any, and colors everything written from then on, so a board can mix colors. Each visit starts with blue. The markers always stay on one row at full size: where they do not fit beside the label they take their own row, which scrolls sideways (on phones and tablets). The row is padded, with matching negative margins, so a scroll container does not clip the lifted marker, its shadow or the focus ring. A marker that gets focus or is picked is scrolled fully into view (`reveal`), since browsers do not scroll to a partly visible element on focus and a tap never focuses one. On phones (under 600px) the tray's padding and label are slimmer, so the tray is about 80px tall.
-   - **Editor**: a Tiptap editor limited to plain lines of colored text (`src/editor/`: document, paragraph, text, the `Ink` mark, undo/redo, placeholder, `ContentLimit`). There is no bold, headings or lists. Tiptap's document format stays inside `WhiteboardSheet` and `src/editor/`: the sheet takes and emits a `BoardWriting` (`content` plus ink runs), so the rest of the app never sees it.
-   - The `Ink` mark's plugin keeps the current ink in ProseMirror's stored marks after every change, so typing anywhere, even inside text of another color, writes in the marker in hand. Pasted and dropped text is recolored to it. Text a change brings in with no ink at all (ProseMirror reads some typing back from the DOM, e.g. typing over a select-all, which skips stored marks) gets it as well, so no text is ever uncolored. Undo restores the earlier colors.
-   - At most 100,000 characters, counting each line break (`ContentLimit`; Tiptap's CharacterCount does not count line breaks). Writing is auto-saved 800 ms after the last keystroke. Saves run one at a time and re-check the text afterwards, so text typed during a save is written too and writes can never land out of order.
-   - Writes to a board are kept at least 500 ms apart (`BOARD_MIN_SAVE_INTERVAL_MS`), counted from when the previous write was acknowledged, because the rules reject writes that come closer together. Usually only a save of text typed during the previous save waits.
-   - Pending writing is flushed by the in-component route guards (and on unmount), so navigating away never loses an edit. Closing the tab mid-pause can still lose the last keystrokes; there is no `beforeunload` prompt.
-   - A status next to the title reads "Saving…", "All changes saved", or an error with a Retry button. It stays empty on a board the user only reads.
-   - The title, status and delete button share one row at every width: a long title wraps its own text. On phones the title is smaller (1.5rem, and the rename field matches) and the status shows only its icon; its text stays in the `role="status"` element for screen readers and is the tooltip.
-   - Note that a Firestore write made while offline stays pending rather than failing, so the status reads "Saving…" until the connection returns; the error state is for rejected writes, such as a board that was deleted.
-   - Do not worry about supporting free writing/drawing with the mouse or a touch screen for now.
+| Diagram | Section | Update it when these change |
+| --- | --- | --- |
+| System context | [System Overview](#system-overview) | Firebase services, external services, `src/firebase/` |
+| Application layers | [Application Layers](#application-layers) | Dependencies between folders under `src/`, new top-level folders |
+| Route guard | [Routing](#routing) | `src/router/` |
+| Sign-in sequence | [Sign-In and the Access Check](#sign-in-and-the-access-check) | `src/stores/auth.ts`, `src/firebase/access.ts`, `src/views/LoginView.vue` |
+| Session states | [Session Lifecycle](#session-lifecycle) | `src/stores/auth.ts`, `src/demo/DemoProfileStorage.ts`, `src/types/session.ts` |
+| Repository classes | [Data Access](#data-access) | `src/repositories/`, the data actions in `src/stores/boards.ts` |
+| Firestore entities | [Data Model](#data-model) | `src/repositories/FirestoreBoardRepository.ts`, `src/firebase/access.ts`, `firestore.rules` |
+| Request checks | [Security](#security) | `firestore.rules`, `src/firebase/appCheck.ts`, App Check enforcement |
+| Writing conversions | [Board Editing and Saving](#board-editing-and-saving) | `src/editor/`, `src/utils/inks.ts`, `src/types/board.ts` |
+| Save sequence | [Board Editing and Saving](#board-editing-and-saving) | `src/views/BoardView.vue`, `src/components/WhiteboardSheet.vue`, `saveBoardWriting` |
+| Commands and backends | [Environments and Delivery](#environments-and-delivery) | `package.json` scripts, `.env.*`, `playwright.config.ts`, `vitest*.config.ts`, `scripts/with-emulators.ts` |
+| Deploy pipeline | [Environments and Delivery](#environments-and-delivery) | `firebase.json`, `.firebaserc`, deploy scripts, `scripts/check-firebase-config.ts` |
 
-Every page shares an app bar with the marker logo on the left and, on the right, an About button and the theme toggle. Once signed in, the toggle is followed by the user's Google photo (or initial, when the account has no photo) and name, a "Demo" chip in demo mode, and Sign out. On phones the name is hidden, Sign out shows only its icon (keeping "Sign out" as its accessible name) at icon width, and the title is slightly smaller, so the whole title still fits at 360px wide.
+## Application Layers
 
-The About button (`AboutDialog`, labelled "About this app") opens a short explanation for visitors such as recruiters: what the app is, a few engineering highlights, the tech stack, and a link to the public GitHub repository. Usage help lives on the "A Quick Tour" sample board instead (see "Demo Mode"), so the dialog does not repeat it. Its text is a shorter version of `README.md`; keep the two consistent when either changes. Both have an "On the Horizon" section naming planned features (currently sketch mode, under "Later" in Project Status), so update them when those plans change.
+Dependencies point one way, from the views down to storage. Views and `App.vue` use the stores; components below them only take props and emit events, so they know nothing of storage or sessions. Only `src/firebase/`, `src/repositories/` and the auth store import Firebase, and Tiptap stays inside `WhiteboardSheet` and `src/editor/`.
 
-`/` redirects to `/boards`. Routes requiring a session are flagged with `meta.requiresAuth`. `/demo` (`meta.startsDemo`) always redirects to `/boards`, starting demo mode first if there is no session (see "Demo Mode").
+```mermaid
+flowchart TD
+    main["main.ts<br/>creates the app, Pinia, router, Vuetify"]
+    app["App.vue<br/>app bar, router-view"]
+    router["router/<br/>routes, sessionGuard"]
+    views["views/<br/>Login, BoardCollection, Board"]
+    components["components/<br/>sheet, tray, cards, dialogs"]
+    editor["editor/<br/>Tiptap extensions and conversion"]
+    authStore["stores/auth<br/>session, access check, demo entry"]
+    boardsStore["stores/boards<br/>loaded boards, search"]
+    repos["repositories/<br/>BoardRepository, createBoardRepository"]
+    demo["demo/<br/>profile storage, sample boards"]
+    fb["firebase/<br/>app, auth, db, App Check, access"]
+    shared["types/, constants/, utils/, theme/<br/>shared by every layer"]
 
-## Data Model (Firestore `boards` collection)
+    main --> app
+    main --> router
+    app --> authStore
+    app --> boardsStore
+    router --> views
+    router --> authStore
+    views --> components
+    views --> authStore
+    views --> boardsStore
+    components --> editor
+    boardsStore --> authStore
+    boardsStore --> repos
+    authStore --> demo
+    authStore --> fb
+    authStore -- "clearDemoBoards" --> repos
+    repos --> demo
+    repos --> fb
+```
 
-Boards live in the **named** Firestore database `vue-whiteboard-app`, not the project's `(default)` database, because the Firebase project is shared with other Valiance Studios apps. The id comes from `VITE_FIREBASE_DATABASE_ID`; empty means `(default)`.
+## Sessions and Routing
 
-- `id`: string (auto-generated)
-- `title`: string (trimmed, 1-100 characters)
-- `titleSearchable`: string (lowercase `title`)
-- `content`: string (plain text; lines separated by `\n`)
-- `inks`: string, optional: the marker color of every character in `content`, as runs, e.g. `blue:24,red:7` (`encodeInks`/`decodeInks` in `src/utils/inks.ts`). Boards without it, or with runs that do not fit `content`, read as the default ink (blue) for the uncovered text rather than failing. A line break takes the ink of the text before it.
-- `createdAt`: `AuditStamp`
-- `updatedAt`: `AuditStamp`
+### Routing
 
-Where `AuditStamp` is `{ uid: string; time: Timestamp }` - who made the change and when.
+`sessionGuard` (`src/router/guards.ts`) runs before every navigation, and waits for the auth store's `init()` so it never decides before Firebase has reported the initial auth state.
 
-### `accessRequests` collection
+| Path | Meta | Behavior |
+| --- | --- | --- |
+| `/` | | Redirects to `/boards`. |
+| `/login` | `guestOnly` | The login page. Someone with a session goes to `/boards`. |
+| `/demo` | `startsDemo` | Never renders: starts demo mode if there is no session, then redirects to `/boards`. It names `LoginView` only because a record needs a component. |
+| `/boards` | `requiresAuth` | The board collection. |
+| `/boards/:id` | `requiresAuth` | A single board. |
+| anything else | | Redirects to `/boards`. |
 
-Denied sign-ins, so the owner can see who is waiting for access without comparing the Authentication users list with the allowlist. One document per account, keyed by uid: `{ email, displayName, requestedAt }`, overwritten with each attempt (Authentication > Users still shows when the account first appeared). Review it in the Firebase console; to grant access, add the email to `allowedUsers` as usual, and delete the request if you like.
+```mermaid
+flowchart TD
+    nav["Any navigation"] --> init["await authStore.init()"]
+    init --> needsAuth{"requiresAuth,<br/>and no session?"}
+    needsAuth -- yes --> login["Go to /login?redirect=requested path"]
+    needsAuth -- no --> demoRoute{"startsDemo?"}
+    demoRoute -- yes --> hasSession{"Has a session?"}
+    hasSession -- no --> guest["enterDemoAsGuest()"]
+    guest --> boards["Go to /boards"]
+    hasSession -- yes --> boards
+    demoRoute -- no --> guestOnly{"guestOnly,<br/>and has a session?"}
+    guestOnly -- yes --> boards
+    guestOnly -- no --> proceed["Continue to the route"]
+```
 
-- Written by the app (`recordAccessRequest` in `src/firebase/access.ts`) when the access check fails, before signing the user out. It is part of the shared access check, so a sign-in reported by both the popup and the auth listener records once.
+After sign-in, `LoginView` returns to the `redirect` path, accepting only in-app paths (starting with `/` but not `//`) to avoid open redirects.
+
+### Sign-In and the Access Check
+
+Signing in with Google is open to anyone, so a session only starts once the account passes the allowlist. Firebase reports a sign-in both to the popup's caller and to the `onAuthStateChanged` listener; both go through `startSession`, and the access check is shared per uid (`checkAccess`), so the allowlist is read and a denial recorded only once. A page load with a remembered account takes the same path from the listener.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Login as LoginView
+    participant Store as auth store
+    participant Auth as Firebase Auth
+    participant FS as Firestore
+
+    User->>Login: Sign in with Google
+    Login->>Store: signInWithGoogle()
+    Store->>Auth: signInWithPopup()
+    Auth-->>Store: Firebase user
+    Store->>Store: startSession(user)
+    Store->>FS: get allowedUsers/lowercase email
+    Note over Store,FS: Skipped, counting as no access, without a verified email
+
+    alt Entry exists
+        FS-->>Store: Found
+        Store->>Store: Set user (kind google)
+        Store-->>Login: true
+        Login->>User: Go to the redirect path or /boards
+    else No entry
+        FS-->>Store: Missing
+        Store->>FS: set accessRequests/uid (best-effort)
+        Store->>Store: Set deniedUser and accessRequested
+        Store->>Auth: signOut()
+        Store-->>Login: false
+        Login->>User: Say which account has no access
+    end
+```
+
+### Session Lifecycle
+
+`SessionUser.kind` is `'google'` or `'demo'`, and the rest of the app reads a session without caring which. `App.vue` resets the boards store on sign-out, so one session's boards never flash for the next.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Resolving: first navigation calls init()
+    Resolving --> Demo: saved demo profile is active
+    Resolving --> Google: Firebase user passes the access check
+    Resolving --> NoSession: no Firebase user and no active profile
+    NoSession --> Google: Google sign-in passes the access check
+    NoSession --> NoSession: Google sign-in denied
+    NoSession --> Demo: Demo Mode button or /demo link
+    Google --> NoSession: sign out
+    Demo --> NoSession: sign out keeps the name and boards
+```
+
+## Data
+
+### Data Access
+
+Components never call Firestore directly.
+
+```mermaid
+classDiagram
+    class BoardRepository {
+        <<interface>>
+        +list() Board[]
+        +get(id) Board or null
+        +create(input) string
+        +update(id, changes)
+        +rename(id, title)
+        +delete(id)
+    }
+    class FirestoreBoardRepository {
+        +constructor(db, uid)
+    }
+    class LocalStorageBoardRepository {
+        +constructor(storage, uid, seedBoards)
+    }
+    class createBoardRepository {
+        <<factory>>
+        +createBoardRepository(session) BoardRepository
+    }
+    class useBoardsStore {
+        <<Pinia store>>
+        +boards
+        +searchTerm
+        +visibleBoards
+        +load()
+        +getBoard(id)
+        +createBoard(input)
+        +saveBoardWriting(id, writing)
+        +renameBoard(id, title)
+        +deleteBoard(id)
+    }
+
+    BoardRepository <|.. FirestoreBoardRepository
+    BoardRepository <|.. LocalStorageBoardRepository
+    createBoardRepository ..> FirestoreBoardRepository: Google session
+    createBoardRepository ..> LocalStorageBoardRepository: demo session
+    useBoardsStore ..> createBoardRepository: one per call
+```
+
+- **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. `get` returns `null` for a missing board or another user's board; unlike it, the writes reject for a missing or someone else's board, so the view can report the failure. `rename` trims the title and re-stamps `updatedAt`; a Firestore rename is an ordinary update, so the rules check the title and the write interval as for any update.
+- **`FirestoreBoardRepository`**: maps Firestore documents to the domain `Board` and applies the owner filter required by the rules.
+- **`LocalStorageBoardRepository`**: demo mode's implementation (see [Demo Mode](#demo-mode)).
+- **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session. Callers build a repository per use instead of keeping one, so it always matches the current session and no cache has to be invalidated on sign-in or sign-out. Implementations must therefore be **cheap to construct and hold no state between calls**: `FirestoreBoardRepository` is just a uid alongside the shared `db` singleton, and `LocalStorageBoardRepository` reads and writes `localStorage` on each call rather than caching boards in a field.
+- **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call and discards a load that finishes after the session changed. `renameBoard` and `deleteBoard` update the loaded list only after the repository succeeds. `saveBoardWriting(id, writing)`, `renameBoard` and `deleteBoard` let errors propagate, because the views own the save status and dialogs rather than the store.
+
+### Data Model
+
+Data lives in the **named** Firestore database `vue-whiteboard-app`, not the project's `(default)` database, because the Firebase project is shared with other Valiance Studios apps. The id comes from `VITE_FIREBASE_DATABASE_ID`; empty means `(default)`.
+
+Firestore has no references or joins, so the lines below are conventions the rules enforce.
+
+```mermaid
+erDiagram
+    AUTH_USER ||--o{ boards : "createdAt.uid is the owner"
+    AUTH_USER ||--o| accessRequests : "document id is the uid"
+    AUTH_USER |o..o| allowedUsers : "document id is the lowercase email"
+
+    AUTH_USER {
+        string uid PK
+        string email
+        boolean emailVerified
+    }
+    boards {
+        string id PK "auto-generated"
+        string title "trimmed, 1-100 characters"
+        string titleSearchable "lowercase title"
+        string content "plain text, lines split by newline"
+        string inks "optional, runs such as blue:24,red:7"
+        AuditStamp createdAt "uid and time"
+        AuditStamp updatedAt "uid and time"
+    }
+    allowedUsers {
+        string id PK "lowercase email, no fields"
+    }
+    accessRequests {
+        string id PK "uid"
+        string email
+        string displayName "nullable"
+        timestamp requestedAt
+    }
+```
+
+**`boards`**
+
+- `inks` holds the marker color of every character in `content`, as runs (`encodeInks`/`decodeInks` in `src/utils/inks.ts`). Boards without it, or with runs that do not fit `content`, read as the default ink (blue) for the uncovered text rather than failing. A line break takes the ink of the text before it.
+- `AuditStamp` is `{ uid: string; time: Timestamp }`: who made the change and when.
+
+**`allowedUsers`**: the accounts allowed to use Firestore. It is managed by hand in the Firebase console (no client can write to it), and `hasFirestoreAccess` in `src/firebase/access.ts` reads the signed-in user's own entry.
+
+**`accessRequests`**: denied sign-ins, so the owner can see who is waiting for access without comparing the Authentication users list with the allowlist. There is one document per account, overwritten with each attempt (Authentication > Users still shows when the account first appeared). Review it in the Firebase console; to grant access, add the email to `allowedUsers` as usual, and delete the request if you like.
+
+- Written by the app (`recordAccessRequest` in `src/firebase/access.ts`) when the access check fails, before signing the user out.
 - **Best-effort**: a failed write (e.g. a retry within the minute the rules require) is logged to the console and never stops the denial. Because the client records it, someone bypassing the app is not recorded: it is a convenience list, not an audit log.
 
+**Domain types**: the application layer uses a storage-agnostic `Board` type (with `Date` instead of Firestore `Timestamp`). Conversion to and from Firestore documents happens only in the Firestore data-access layer, so no Firebase types leak into components or stores. `BoardWriting` is `{ content: string; inks: InkRun[] }` with `InkRun` `{ ink: MarkerInk; length: number }`; runs are kept normalized (covering `content` exactly, no empty runs, neighbours of different inks). `Board` extends it, and `BoardUpdateInput` is it.
 
-The accounts allowed to use Firestore. Each document's id is a **lowercase** email address; the document has no fields. It is managed by hand in the Firebase console (no client can write to it), and `hasFirestoreAccess` in `src/firebase/access.ts` reads the signed-in user's own entry.
+## Security
 
-In the domain types, `BoardWriting` is `{ content: string; inks: InkRun[] }` with `InkRun` `{ ink: MarkerInk; length: number }`; runs are kept normalized (covering `content` exactly, no empty runs, neighbours of different inks). `Board` extends it, and `BoardUpdateInput` is it.
+Anyone can sign in with Google, and the Firebase web config is public, so what protects the data is enforced on the server: App Check and the security rules. Client-side checks (the access check, the save debounce and spacing, the editor's length limit) only make the app behave well for honest users; anyone signed in can call the Firestore SDK directly with their own token.
 
-The application/domain layer uses a storage-agnostic `Board` type (with `Date` instead of Firestore `Timestamp`). Conversion to and from Firestore documents happens only in the Firestore data-access layer, so no Firebase types leak into components or stores.
+This is the path of a board update, the most heavily checked request:
+
+```mermaid
+flowchart TD
+    request["Board update from a client"] --> appcheck
+
+    subgraph service["Firebase service"]
+        appcheck["Valid App Check token<br/>(not checked by the emulators)"]
+    end
+
+    subgraph rules["firestore.rules: all must pass"]
+        verified["Signed in, with a verified email"]
+        allowed["allowedUsers entry for the lowercase email"]
+        owner["createdAt.uid is the signed-in user"]
+        interval["First edit since creation, or<br/>over 500 ms since the last write"]
+        fields["Fields and sizes valid"]
+        stamps["createdAt unchanged, and updatedAt<br/>stamped by self at server time"]
+        verified --> allowed --> owner --> interval --> fields --> stamps
+    end
+
+    appcheck --> verified
+    stamps --> accepted["Written"]
+    service -- "fails" --> rejected["Rejected"]
+    rules -- "any check fails" --> rejected
+```
 
 ### Access Rules
 
-Signing in with Google is open to anyone, so the rules, not the client, are what stop strangers from writing to Firestore. Client-side checks (the access check, the save debounce and spacing, the textarea's max length) only make the app behave well for honest users; anyone signed in can call the Firestore SDK directly with their own token.
+The rules are in `firestore.rules`, covered by tests in `tests/rules/`.
+
+**Allowlist**
 
 - Every board operation requires an **allowlisted, verified email**: `request.auth.token.email_verified` is true and `allowedUsers/<lowercase email>` exists. Removing an entry locks the user out immediately, whereas disabling their Auth account leaves their token valid for up to an hour.
-- `accessRequests/{uid}` may only be written by that signed-in user, with exactly `email` (equal to the token's email), `displayName` (string of at most 200 characters, or null) and `requestedAt` (the server's time), and updated at most once a minute. Clients cannot read, list or delete requests; only the console can.
 - Users may `get` only their own `allowedUsers` entry, so the client can tell whether it has access (a missing entry reads as "no access", not an error). Listing and writing the allowlist are denied.
+
+**Ownership**: boards are private to their owner, who is the creator, identified by `createdAt.uid` (no separate owner field).
+
+- Read, update, and delete are allowed only when `createdAt.uid` matches the signed-in user.
+- List queries must filter on `where('createdAt.uid', '==', uid)`; unfiltered queries are rejected. This single-field equality query needs no composite index.
+- On create, `createdAt` and `updatedAt` must both be stamped with the signed-in user's uid and the server time. On update, `createdAt` is immutable and `updatedAt` must be re-stamped by the owner.
+
+**Limits**
+
 - `content` is capped at 100,000 characters (`BOARD_CONTENT_MAX_LENGTH`), so no write can approach Firestore's 1 MiB document limit.
 - `inks`, when present, must be well-formed runs of the six known inks and at most 20,000 characters long (`BOARD_INKS_MAX_LENGTH`, about 2,000 color changes). Rules cannot check that the runs add up to the length of `content`; the client tolerates a mismatch.
 - An update must come more than 500 ms after the board's last write (`updatedAt.time`). The first edit after a board is created is exempt (detected by `updatedAt == createdAt`), so writing straight away on a new board, or leaving it right after, is never rejected.
 - Not limited: how many boards a user creates, and reads, which rules cannot rate-limit. The allowlist is the protection for both. A per-user board cap would need a counter document checked with `getAfter()` in a batched write, and is only worth adding if an allowlisted account is abused.
 
-Boards are private to their owner. The owner is the creator, identified by `createdAt.uid` (no separate owner field).
+**Access requests**: `accessRequests/{uid}` may only be written by that signed-in user, with exactly `email` (equal to the token's email), `displayName` (string of at most 200 characters, or null) and `requestedAt` (the server's time), and updated at most once a minute. Clients cannot read, list or delete requests; only the console can.
 
-- Read, update, and delete are allowed only when `createdAt.uid` matches the signed-in user.
-- List queries must filter on `where('createdAt.uid', '==', uid)`; unfiltered queries are rejected. This single-field equality query needs no composite index.
-- On create, `createdAt` and `updatedAt` must both be stamped with the signed-in user's uid and the server time. On update, `createdAt` is immutable and `updatedAt` must be re-stamped by the owner.
-- Rules are covered by tests in `tests/rules/`.
+### App Check
 
-## Data Access
+App Check (reCAPTCHA Enterprise) attests that requests come from this web app, and it is **enforced for Cloud Firestore and Authentication** in `vs-valiance-studios-dev`, so both reject calls from scripts that only have the (public) web config, even with an allowlisted account's token. It does not stop someone using the real site in a browser; the allowlist covers that. It is used on the dev project too, since that project is public, on billing, and in use.
 
-Components never call Firestore directly. The layers are:
+- **Client** (`activateAppCheck` in `src/firebase/appCheck.ts`, called from `src/firebase/index.ts`): `initializeAppCheck` with `ReCaptchaEnterpriseProvider` and token auto-refresh, before Auth and Firestore are created. It is skipped against the emulators (which do not check App Check) and when no site key is set, so `npm run dev`, the emulator tests and the E2E tests are unaffected.
+- **Site key**: `VITE_APPCHECK_SITE_KEY` in `.env.staging` (site keys are public). `scripts/check-firebase-config.ts` fails a deploy without it, because with enforcement on, a build without App Check is locked out.
 
-- **`BoardRepository`** (`src/repositories/BoardRepository.ts`): storage interface scoped to one user, so callers never pass an owner. `list()`, `get(id)` (returns `null` for a missing board or another user's board), `create(input)`, `update(id, changes)`, `rename(id, title)` and `delete(id)`. Unlike `get`, the writes reject for a missing or someone else's board, so the view can report the failure. `rename` trims the title and re-stamps `updatedAt`; a Firestore rename is an ordinary update, so the rules check the title and the write interval as for any update.
-- **`FirestoreBoardRepository`**: the only implementation for now. Maps Firestore documents to the domain `Board` and applies the owner filter required by the rules.
-- **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session: `FirestoreBoardRepository` for Google accounts, `LocalStorageBoardRepository` for demo mode. Callers build a repository per use instead of keeping one, so it always matches the current session and no cache has to be invalidated on sign-in or sign-out. Implementations must therefore be **cheap to construct and hold no state between calls** - `FirestoreBoardRepository` is just a uid alongside the shared `db` singleton. `LocalStorageBoardRepository` likewise reads and writes `localStorage` on each call rather than caching boards in a field.
-- **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call, discards a load that finishes after the session changed, and is reset on sign-out. `renameBoard` and `deleteBoard` update the loaded list only after the repository succeeds. `saveBoardWriting(id, writing)`, `renameBoard` and `deleteBoard` let errors propagate, because the views own the save status and dialogs rather than the store.
+- **Enforcement** is a per-service switch for the whole project, not per app, so a new app in `vs-valiance-studios-dev` must send valid tokens from its first deploy, with no monitoring period (see [Console Setup](docs/DEPLOYMENT.md#console-setup)).
+
+Console setup and debug tokens are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#app-check-setup).
+
+## Board Editing and Saving
+
+### The Editor
+
+A Tiptap editor limited to plain lines of colored text (`src/editor/`: document, paragraph, text, the `Ink` mark, undo/redo, placeholder, `ContentLimit`). There is no bold, headings or lists. Tiptap's document format stays inside `WhiteboardSheet` and `src/editor/`: the sheet takes and emits a `BoardWriting`, so the rest of the app never sees it.
+
+```mermaid
+flowchart LR
+    editor["ProseMirror document<br/>paragraphs with Ink marks"]
+    writing["BoardWriting<br/>content and InkRun[]"]
+    firestore[("Firestore document<br/>content and inks string")]
+    local[("localStorage JSON<br/>content and InkRun[]")]
+
+    editor -- "fromEditorDoc" --> writing
+    writing -- "toEditorContent" --> editor
+    writing -- "encodeInks" --> firestore
+    firestore -- "decodeInks" --> writing
+    writing <-- "as runs, re-normalized on read" --> local
+```
+
+- The `Ink` mark's plugin keeps the current ink in ProseMirror's stored marks after every change, so typing anywhere, even inside text of another color, writes in the marker in hand. Pasted and dropped text is recolored to it. Text a change brings in with no ink at all (ProseMirror reads some typing back from the DOM, e.g. typing over a select-all, which skips stored marks) gets it as well, so no text is ever uncolored. Undo restores the earlier colors.
+- A board holds at most 100,000 characters, counting each line break (`ContentLimit`; Tiptap's CharacterCount does not count line breaks).
+
+### Saving
+
+Writing is auto-saved 800 ms after the last keystroke. Saves run one at a time and re-check the text afterwards, so text typed during a save is written too and writes can never land out of order.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Sheet as WhiteboardSheet
+    participant View as BoardView
+    participant Store as boards store
+    participant Repo as BoardRepository
+
+    User->>Sheet: Types
+    Sheet->>View: change(BoardWriting)
+    View->>View: Status "Saving…", restart the 800 ms debounce
+    Note over View: Leaving the board or Retry flushes the debounce (flushSave)
+    View->>View: save(), or join the runningSave
+
+    loop Until storage matches the screen
+        View->>View: Wait out 500 ms since the last acknowledged write
+        View->>Store: saveBoardWriting(id, writing)
+        Store->>Repo: update(id, writing)
+
+        alt Acknowledged
+            Repo-->>View: Resolved, record savedWriting and lastSavedAt
+        else Rejected
+            Repo-->>View: Error, status with Retry, loop ends
+        end
+    end
+
+    Note over View: With no rejection, the status reads "All changes saved"
+```
+
+- **Write spacing**: writes to a board are kept at least 500 ms apart (`BOARD_MIN_SAVE_INTERVAL_MS`), counted from when the previous write was acknowledged, because the rules reject writes that come closer together. Usually only a save of text typed during the previous save waits.
+- **Joining a save**: `save()` returns the save in progress (`runningSave`) instead of returning at once when one is running, so renaming, deleting and leaving the board can all wait for it. A rename is a write like any save, so it first waits for pending writing (`flushSave`) and the 500 ms gap.
+- **Leaving the board**: pending writing is flushed by the in-component route guards (and on unmount), so navigating away never loses an edit. Closing the tab mid-pause can still lose the last keystrokes; there is no `beforeunload` prompt.
 
 ## Demo Mode
 
 Visitors can use the app without an account, with their boards kept in this browser's `localStorage`. Everything after the login page works the same as for a Google account; the views do not know which kind of session they are in.
 
 - **Starting**: the login page's **Demo Mode** button. A first-time visitor is asked for a name (`DemoModeDialog`, required, at most 50 characters), which becomes the session's `displayName`. A returning visitor in the same browser goes straight in under their saved name; under the Demo Mode button, the login card greets them in a tinted panel (their initial, "Welcome back, Grace") with a **Not you?** button. That asks someone new for a name, warning that starting deletes the previous visitor's demo boards (`enterDemoAsSomeoneNew`, which calls `clearDemoBoards`); cancelling keeps everything.
-- **Demo link** (`/demo`, for a resume or LinkedIn): goes straight to the boards with no name prompt. A returning visitor enters under their saved name; a first-time one enters as "Guest" (`DEMO_GUEST_NAME`, through the auth store's `enterDemoAsGuest`). An existing session, Google or demo, is kept. The route names `LoginView` only because a record needs a component; `sessionGuard` always redirects before it renders.
-- **Session**: `SessionUser.kind` is `'google'` or `'demo'`. A demo session has uid `demo`, no email and no photo. The auth store's `enterDemo(name?)` starts one (returning `false` when there is no name given or saved, so the login page can ask), and the `isDemo` getter drives the app bar's "Demo" chip. The route guard only checks for a session, so demo sessions pass it.
+- **Demo link** (`/demo`, for a resume or LinkedIn): goes straight to the boards with no name prompt. A returning visitor enters under their saved name; a first-time one enters as "Guest" (`DEMO_GUEST_NAME`, through the auth store's `enterDemoAsGuest`). An existing session, Google or demo, is kept.
+- **Session**: a demo session has uid `demo`, no email and no photo. The auth store's `enterDemo(name?)` starts one (returning `false` when there is no name given or saved, so the login page can ask), and the `isDemo` getter drives the app bar's "Demo" chip. The route guard only checks for a session, so demo sessions pass it.
 - **Profile** (`DemoProfileStorage`, key `whiteboard.demo.profile`): `{displayName, active}`. `active` is what keeps a demo session across reloads: `init()` resumes it before Firebase reports its (empty) auth state, and Firebase reporting no user does not end a demo session. Signing out clears `active` but keeps the name and the boards, which is how the next visit skips the name prompt. An unreadable profile counts as none.
-- **Boards** (`LocalStorageBoardRepository`, key `whiteboard.demo.boards`): a JSON array of boards, dates as ISO strings and inks as runs, re-normalized on read.
-- **Sample boards** (`SAMPLE_BOARDS` in `src/demo/sampleBoards.ts`, written as inked pieces of text and joined with `writingFromSegments`): `createBoardRepository` passes them to `LocalStorageBoardRepository` as seed boards. When the boards key is missing, the first read writes them (so their ids stay fixed from then on). Deleting every board stores `[]`, so they do not come back; `clearDemoBoards` removes the key, so someone new starting in the same browser gets them again. Methods are `async`, so a storage error such as a full quota (browsers allow roughly 5 MB per origin) rejects and shows as a failed save. There are no Firestore rules here; the views' own limits (title length, content length) still apply. Like the rules, the repository rejects a blank title in `create` and `rename`, so both implementations agree on it.
+- **Boards** (`LocalStorageBoardRepository`, key `whiteboard.demo.boards`): a JSON array of boards, dates as ISO strings and inks as runs, re-normalized on read. Methods are `async`, so a storage error such as a full quota (browsers allow roughly 5 MB per origin) rejects and shows as a failed save. There are no Firestore rules here; the views' own limits (title length, content length) still apply. Like the rules, the repository rejects a blank title in `create` and `rename`, so both implementations agree on it.
+- **Sample boards** (`SAMPLE_BOARDS` in `src/demo/sampleBoards.ts`, written as inked pieces of text and joined with `writingFromSegments`): `createBoardRepository` passes them to `LocalStorageBoardRepository` as seed boards. When the boards key is missing, the first read writes them (so their ids stay fixed from then on). Deleting every board stores `[]`, so they do not come back; `clearDemoBoards` removes the key, so someone new starting in the same browser gets them again.
 - **Not covered**: a demo visitor cannot carry their boards into a Google account, and clearing site data deletes them. Demo writes still wait out the 500 ms save interval meant for Firestore, which is harmless.
 
-## Local Development
+## Environments and Delivery
 
-- Development runs against the **Firebase Local Emulator Suite** (Auth + Firestore) using the `demo-whiteboard-app` project ID. The `demo-` prefix guarantees no real Firebase resources are touched.
-- `VITE_USE_FIREBASE_EMULATORS=true` (in `.env.development`) connects the SDK to the emulators. See "Environment files" for the other modes.
-- Requires Java 21+ (for the Firestore emulator); `firebase-tools` is a dev dependency.
-- New machine setup: `nvm install 26` and `nvm use 26` (nvm-windows does not read `.nvmrc`), `npm ci`, then `npx playwright install chromium`. The first emulator run downloads the emulator binaries.
-- Run `npm run emulators` in one terminal and `npm run dev` in another. Emulator UI: http://127.0.0.1:4000. Stop the emulators with Ctrl+C.
-- `npm run dev:staging` runs the dev server against the hosted dev project instead (`.env.staging`), with real Google sign-in and the real allowlist. It needs an App Check debug token in `.env.staging.local` (see "App Check").
-- `npm run emulators` seeds the emulators on every start (`scripts/seed-emulators.ts`, since emulator data is not kept between runs) with **Dev User (`dev@example.com`)**, a verified Google account that is on the allowlist and has a profile photo (`PLACEHOLDER_PHOTO_URL`, a data URL of `scripts/assets/placeholder-photo.svg`, so it loads offline and never ships with the app). A real Google account cannot sign in locally, since sign-in goes through the Auth emulator; to see the initial instead of a photo, add an account in the popup and leave "Profile photo URL" empty. Pick it under "Choose an account" in the sign-in popup. The rules are not relaxed for local work: the account is allowlisted just as one would be in production, so local development runs against the deployed rules. To try another account, add `allowedUsers/<lowercase email>` (no fields) in the Emulator UI's Firestore tab on the `vue-whiteboard-app` database; a new account without an entry shows the "no access" message.
-- `scripts/emulator-admin.ts` holds the admin helpers the seed and the E2E tests share (`allowEmail`, `createGoogleAccount`). They call the emulators' REST APIs with the `Bearer owner` admin token, take the project, database and ports from `.env.development` and `firebase.json`, and refuse to run against a project id without the `demo-` prefix.
-- `npm run test:emulator` and `npm run test:e2e` start their own emulators through `scripts/with-emulators.ts` (run directly by Node's built-in TypeScript support). `npm run emulators` uses the same script with `--keep-running`, which leaves the emulators up (showing their output) after the seed succeeds, until Ctrl+C. It replaces `firebase emulators:exec`, which on Windows left the Firestore emulator's Java process running and broke the next run with "port taken". Stop any `npm run emulators` session first, since both use the same ports.
-- `npm run emulators:stop` (`scripts/stop-emulators.ts`) stops this project's emulators, for an `npm run emulators` session in another terminal or a leftover process from a crashed run. It finds them by command line, not by port: `with-emulators.ts`, the Firebase CLI and the Firestore emulator's Java process, each naming the emulator project id (the default in `.firebaserc`). It then checks that the ports from `firebase.json` (plus the CLI's hub and logging ports) are free by connecting to them on `127.0.0.1` and `::1`. An unrelated server on a shared port such as 8080 is never stopped; it is reported, and the script exits with an error.
+Each command runs in one Vite mode, and that mode's env file decides which backend it reaches. Only `dev:staging` and deploys touch real infrastructure. Details are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-## Environment files
+```mermaid
+flowchart LR
+    subgraph local["Local commands"]
+        dev["npm run dev"]
+        e2e["npm run test:e2e<br/>(Playwright, with npm run dev)"]
+        seed["npm run emulators<br/>(with the seed script)"]
+        emu["npm run test:emulator"]
+        unit["npx vitest run"]
+        devStaging["npm run dev:staging<br/>(with an App Check debug token)"]
+    end
 
-One file per Vite mode, with no bare `.env` (Vite loads `.env` and `.env.local` in every mode, so real config there would point `npm run dev` and the E2E tests at real Firebase). Vite does not layer modes, so each file holds a complete config.
+    subgraph emulators["Emulators: project demo-whiteboard-app"]
+        emuNamed[("Auth + Firestore<br/>database vue-whiteboard-app")]
+        emuDefault[("Firestore only<br/>database (default)")]
+    end
 
-| File | Committed | Used for |
-| --- | --- | --- |
-| `.env.development` | Yes | The emulators (`demo-whiteboard-app`): `npm run dev`, the seed, and the E2E tests. Vite's default mode. |
-| `.env.staging` | Yes | The app hosted in the dev project (`vue-whiteboard-app-dev`): `npm run dev:staging`, `npm run build:staging`, and every deploy. Firebase web config is compiled into the public site, so it is not secret. |
-| `.env.production` | Yes | Reserved for a future production project. None exists yet ("staging is production"), so it is empty and nothing builds with it. |
-| `.env.example` | Yes | Template for a new env file. |
-| `.env.<mode>.local` | No | Personal, machine-specific overrides of the matching mode, such as the App Check debug token in `.env.staging.local`. |
+    jsdom["jsdom, no backend"]
+    real[("vs-valiance-studios-dev<br/>database vue-whiteboard-app")]
 
-Never put real secrets in `VITE_` variables; they end up in the bundle.
+    dev -- ".env.development" --> emuNamed
+    e2e -- ".env.development" --> emuNamed
+    seed --> emuNamed
+    emu -- "rules-unit-testing" --> emuDefault
+    unit --> jsdom
+    devStaging -- ".env.staging" --> real
+```
 
-## Deployment
+Deploys are manual. The predeploy steps run for every deploy that includes Hosting, whichever npm script started it:
 
-Firebase Hosting, deployed manually, to the dev project `vs-valiance-studios-dev` (`dev` alias in `.firebaserc`). There is no production project yet, so deploys build in the `staging` mode (`.env.staging`); adding production means another alias and filling in `.env.production`, not a rework. `default` stays the `demo-whiteboard-app` emulator project so a stray `firebase` command cannot reach real infrastructure.
-
-- **First-time setup**: `firebase login`. The web app config and App Check site key are already in the committed `.env.staging`.
-- **Allowlist**: before the first rules deploy, add `allowedUsers/<lowercase email>` (no fields) to the `vue-whiteboard-app` database in the Firebase console for each person who should have access, or everyone, including you, is locked out. Add and remove people the same way later; no deploy is needed.
-- **Deploy**: `npm run deploy` (hosting + Firestore rules and indexes), or `npm run deploy:hosting` / `npm run deploy:rules` for one of them. All three are pinned to `--project dev`. `firebase deploy --dry-run` validates a deploy, including the predeploy build and rules compilation, without publishing.
-- The app has its **own Hosting site**, `vs-valiance-studios-dev-whiteboard` (`hosting.site` in `firebase.json`), served at https://vs-valiance-studios-dev-whiteboard.web.app. The project's default site is left free for other Valiance Studios apps, and deploys here cannot affect them. A custom domain, if one is wanted later, attaches to this site without redeploying.
-- `hosting.predeploy` runs `node scripts/check-firebase-config.ts staging` and then `npm run build:staging` (`vite build --mode staging`), so a deploy fails early if the config, the database id or the App Check site key is missing, the config points at the emulators, or an App Check debug token is set (from `.env.staging.local`), rather than serving an app that cannot reach Firebase or that anyone could get past App Check with. Remove or rename `.env.staging.local` before deploying. `npm run build` on its own builds the `production` mode, which needs no credentials, since it doubles as the type and bundle check.
-- The `firestore` entry in `firebase.json` is the **array form with an explicit `database`**, so a rules deploy can only ever reach `vue-whiteboard-app`. The single-object form would deploy to `(default)` and could overwrite another app's rules in the shared project.
-- SPA routing needs the `**` → `/index.html` rewrite, or reloading `/boards/:id` would 404. Hashed assets under `/assets` are served immutable for a year; `index.html` is not cached.
-- After the first deploy, add the hosting domain to **Authentication > Settings > Authorized domains** if a custom domain is used. `*.web.app` and `*.firebaseapp.com` are authorized automatically.
-- The Hosting emulator is deliberately not part of `npm run emulators` (`--only auth,firestore`): local work is served by Vite on port 5173, and the Hosting emulator would serve a stale `dist`.
-
-## App Check
-
-App Check (reCAPTCHA Enterprise) attests that requests come from this web app, and it is **enforced for Cloud Firestore and Authentication** in `vs-valiance-studios-dev`, so both reject calls from scripts that only have the (public) web config, even with an allowlisted account's token. It does not stop someone using the real site in a browser; the allowlist covers that. It is used on the dev project too, since that project is public, on billing, and in use.
-
-- **Client** (`activateAppCheck` in `src/firebase/appCheck.ts`, called from `src/firebase/index.ts`): `initializeAppCheck` with `ReCaptchaEnterpriseProvider` and token auto-refresh, before Auth and Firestore are created. It is skipped against the emulators (which do not check App Check) and when no site key is set, so `npm run dev`, the emulator tests and the E2E tests are unaffected.
-- **Site key**: `VITE_APPCHECK_SITE_KEY` in `.env.staging` (site keys are public). `scripts/check-firebase-config.ts` fails a deploy without it, because with enforcement on, a build without App Check is locked out.
-- **Enforcement** is project-wide per service, not per app: every app in `vs-valiance-studios-dev` that uses Firestore or Authentication must send App Check tokens. A new app in the project needs App Check from its first deploy.
-- **Console setup** (once per project):
-  1. Google Cloud console > Security > reCAPTCHA (enable the reCAPTCHA Enterprise API if asked): create a **website** key for the hosting domains, `vs-valiance-studios-dev-whiteboard.web.app` and `vs-valiance-studios-dev-whiteboard.firebaseapp.com`, plus any custom domain. Do not enable a challenge; App Check uses score-based keys.
-  2. Firebase console > App Check > Apps: register the web app with the **reCAPTCHA Enterprise** provider and that site key.
-  3. Put the key in the mode's env file (`.env.staging` for the dev project) as `VITE_APPCHECK_SITE_KEY` and deploy.
-  4. **Monitor before enforcing**: leave Firestore unenforced for a few days and watch App Check > APIs > Cloud Firestore. Nearly all requests should be "verified". Unverified ones come from old cached builds, scripts, or a misconfigured domain.
-  5. **Enforce** for Cloud Firestore and Authentication (done for the dev project). If the app breaks, unenforce in the console; it takes effect within minutes and needs no deploy.
-- **Debug token** for `npm run dev:staging`: `localhost` is deliberately not a reCAPTCHA domain, so local runs against the dev project use a debug token instead. Generate one (e.g. `node -e "console.log(crypto.randomUUID())"`), register it in Firebase console > App Check > Apps > (web app) > Manage debug tokens, and put `VITE_APPCHECK_DEBUG_TOKEN=<token>` in a gitignored `.env.staging.local`. `activateAppCheck` sets it as `self.FIREBASE_APPCHECK_DEBUG_TOKEN` before starting App Check. A registered debug token passes App Check, so the deploy check refuses any build that has one; revoke it in the console if it leaks.
-- A future production project repeats the console steps with its own key; the code does not change.
-
-## Testing
-
-- **Unit tests** (Vitest, jsdom): colocated under `tests/unit/`, mirroring `src/`. `tests/unit/editor/` drives a real Tiptap editor in jsdom; jsdom has no `ClipboardEvent`, so the paste test dispatches the transaction ProseMirror's paste handler would.
-- `tsconfig.vitest.json` inherits the app's `lib` (ES2022 + DOM). The create-vue template's `"lib": []` relied on `jsdom` types this project does not install, which left code under `src/` without ES2022 or DOM types when type-checked for tests.
-- **Emulator tests** (Vitest + `@firebase/rules-unit-testing`, `npm run test:emulator`): run in Node against the Firestore emulator with rules enforced. These run against `(default)` rather than the named database, because `@firebase/rules-unit-testing` cannot target a named one. That is harmless: the suite uploads `firestore.rules` to the emulator itself, so it tests the same rules file that is deployed. Dev and the E2E tests do use the named database, so the `getFirestore(app, id)` path is covered.
-  - `tests/rules/`: security rules.
-  - `tests/integration/`: repository implementations, which also verifies their queries are allowed by the rules.
-- **E2E tests** (Playwright): under `tests/e2e/`, run against the dev server backed by the emulators. `tests/e2e/support/auth.ts` signs in through the Auth emulator's Google popup with a unique user per test, so tests are isolated without clearing data. `signIn` first allowlists the user with `allowEmail` from `scripts/emulator-admin.ts`, which bypasses the rules; `submitSignIn` goes through the popup without doing so, for testing denied access. A `TestUser` with a `photoUrl` fills the popup's "Profile photo URL" field (`tests/e2e/app-bar.spec.ts` covers the avatar's photo and initial). The board is a `contenteditable`, not a textarea, so `tests/e2e/support/boards.ts` writes with `writeOnBoard` (select all, then type line by line) and reads lines with `boardLines` (one `<p>` each) and colors with `inkedText(page, ink)`.
-
-## Styling
-
-- Two Vuetify themes, `light` and `dark` (`src/plugins/vuetify.ts`). Light sets marker blue `#1f3b73` as `primary` on a cool-grey background; dark lightens it to `#9bb7ee` (with dark text on it) on near-black surfaces.
-- **Theme toggle** (`ThemeToggle`): a sun/moon button at the right edge of the app bar. On the login page it is the only control there; once signed in it sits just left of the avatar. Until the visitor picks a theme the app follows the system setting (`defaultTheme: 'system'`, which tracks changes live); a pick is saved to `localStorage` (`whiteboard.theme`, `src/theme/themePreference.ts`) and wins over the system from then on. The saved theme is read when Vuetify is created, before the first render, so it never flashes the other theme.
-- **Tab icon** (`public/favicon.svg`, linked from `index.html`): the same `mdi-marker` icon as the app bar, copied as an SVG path from `@mdi/svg` 7.4.47 to match the installed `@mdi/font`. It follows the system color scheme, not the in-app toggle (a favicon cannot see the page's theme): marker blue normally, the dark theme's lighter blue when the system is dark, so it stays visible on dark tab bars. PNG fallbacks cover browsers that skip SVG tab icons (Safari): `favicon-32.png` (linked with `sizes="32x32"`, so SVG-capable browsers still prefer the SVG) and `apple-touch-icon.png` (180 px, for Safari and iOS bookmarks and home screens). A PNG cannot follow the color scheme, so both draw the marker on a white tile. They are generated from the SVG by `npm run icons` (`scripts/generate-icons.ts`, rendering with Playwright's Chromium); rerun it and commit the PNGs whenever the SVG changes.
-- **The boards stay white in the dark theme**: they are whiteboards, and the marker inks are chosen for white. So anything drawn on a board (e.g. the card's "Empty board") sets its own color rather than inheriting the theme's text color, which is light in the dark theme.
-- Vuetify's theme variables are comma-separated channels (`--v-theme-primary: 31,59,115`), so a translucent theme color is `rgba(var(--v-theme-primary), 0.08)`. The slash form, `rgb(var(--v-theme-primary) / 8%)`, mixes the two syntaxes; browsers drop it silently and the color never shows.
-- The dry-erase look (marker font stack, aluminium frame and glossy surface) lives in `src/styles/_board.scss`. Marker colors live in code (`src/constants/markers.ts`), because the editor and the previews need them there. Components pull it in with `@use '@/styles/board';` (the `@/` alias works in Sass too), so the board view and the collection's previews cannot drift apart.
-
-## Linting
-
-ESLint (flat config, `eslint.config.js`) with `typescript-eslint`, `eslint-plugin-vue` (`flat/recommended`), and `@stylistic` (semicolons, single quotes, 1tbs braces, always-parenthesized arrow params, no spaces inside object braces). Run `npm run lint` / `npm run lint:fix`.
-
-## Known Quirks
-
-- **Auth emulator popup**: on a freshly started Auth emulator, a sign-in popup sometimes ignores its submit button (no request is sent and the popup never closes). The E2E helper `tests/e2e/support/auth.ts` closes a stuck popup and retries. The emulator's form inputs also lack accessible names, so the helper selects them by id.
-- **Vuetify and Vite pre-bundling**: `vuetify` is excluded from `optimizeDeps` in `vite.config.ts`. Otherwise, with a cold Vite cache, auto-imported components are discovered as pages load, and Vite re-optimizes and reloads the page mid-session, which breaks in-flight actions and E2E tests.
-- **Leftover emulators**: `firebase emulators:exec` left the Firestore emulator's Java process running on Windows, hence `scripts/with-emulators.ts`, which stops the emulators' whole process tree (`taskkill /T` on Windows, a process-group kill elsewhere; the latter verified on macOS). It stops them on Ctrl+C, a kill (SIGTERM) and a hang-up (SIGHUP), which is what closing the terminal or IDE task running `npm run emulators` sends. Before SIGHUP was handled, closing that terminal killed only the script and left the emulators running unparented: the CLI later exited, and the Firestore emulator's Java process kept port 8080, so every E2E sign-in hung for want of the Auth emulator. `npm run emulators:stop` clears such leftovers.
-- **"Port taken" errors**: if a run fails with "port taken", run `npm run emulators:stop`. It clears a leftover `java` process on port 8080 or a running `npm run emulators` session; if it reports a port held by something else, stop that process yourself. A run that fails this way leaves nothing behind.
-- **Port listings on Windows**: `netstat` and `Get-NetTCPConnection` were seen listing only a varying few of the emulators' listening sockets (each port in at most 1 of 10 samples), and `netstat -p TCP` omits IPv6, where the hub listens (`::1:4400`). `emulators:stop` used to find emulators that way and sometimes reported them stopped while they still ran, so it now finds them by command line and probes the ports by connecting. It is unconfirmed whether the flaky listings happen outside Claude Code's sandboxed shell.
-- **Dependency overrides** (`overrides` in `package.json`): three nested packages are forced past versions with security advisories that their parents still pin. Each only runs under Node (tests and the Firebase CLI), never in the browser bundle, and each override was checked against what the parent uses:
-  - `@grpc/grpc-js` ^1.14.6 under `@firebase/firestore`, which pins ~1.9 even in its latest release. The SDK uses gRPC only in Node (the emulator tests); the browser build talks to Firestore over WebChannel. The emulator tests exercise it.
-  - `@opentelemetry/core` ^2.8.0 under `@google-cloud/pubsub` 5 (from `firebase-tools`), which only uses its `W3CTraceContextPropagator`.
-  - `uuid` ^11.1.1 under `gaxios` 6 (from `firebase-tools`), which only calls `v4()`.
-
-  When updating Firebase or `firebase-tools`, check whether the parents have caught up (`npm ls @grpc/grpc-js @opentelemetry/core uuid`) and drop overrides that are no longer needed; `npm audit` should stay at 0.
+```mermaid
+flowchart TD
+    start["npm run deploy"] --> check["scripts/check-firebase-config.ts<br/>for the staging mode"]
+    check -- "config or site key missing,<br/>emulators on, or debug token set" --> abort["Deploy refused"]
+    check -- ok --> build["npm run build:staging<br/>vue-tsc, then a Vite build<br/>in the staging mode"]
+    build --> hosting["Hosting site<br/>vs-valiance-studios-dev-whiteboard"]
+    start --> rules["firestore.rules and indexes<br/>database vue-whiteboard-app only"]
+```
 
 ## Project Status
 
-Last updated 2026-11-02.
-
-**Done**
-- Scaffolding, tooling (ESLint, Vitest, Playwright), and Firebase emulator setup.
-- Google sign-in with a route guard and post-login redirect; dismissing the popup is not treated as an error.
-- Owner-only Firestore security rules with tests.
-- Board data layer (`BoardRepository` with `list`, `get`, `create`) and the boards store.
-- Board Collection View: in-memory substring search, board grid, create dialog, empty and error states.
-- Single Board View: loads the board by id and shows its title, with loading, not-found, and error states.
-- Single Board View editing: dry-erase styled `v-sheet`, debounced auto-save through `BoardRepository.update`, save status, and a flush when leaving the board.
-- `npm run emulators:stop` to clear emulator ports left in use.
-- Firebase Hosting deployment to the dev project, with the app pointed at the named `vue-whiteboard-app` database.
-- Firestore safeguards: an email allowlist for all board access (with a "no access" message on the login page), a board content size cap, and a minimum gap between writes to one board. `npm run emulators` seeds an allowlisted Dev User for local work. Denied sign-ins are recorded in `accessRequests`.
-- Visual refresh of the app bar and Board Collection View: a custom Vuetify theme, whiteboard-style board cards, and a board count.
-- Marker tray and multi-color writing on the Single Board View (a Tiptap editor), with colors stored as `inks` runs and shown in the collection previews.
-- Demo Mode: a name-only session from the login page, with boards kept in `localStorage`; returning visitors go straight in.
-- Renaming and deleting boards, from the board cards and from the board page.
-- Light and dark themes, with a toggle in the app bar; follows the system setting until one is picked.
-- The marker icon as the tab icon, with PNG fallbacks.
-- The dev project is deployed and in use (`npm run deploy` after merging), with the allowlist in place.
-- App Check (reCAPTCHA Enterprise) in the client; the key is registered on the dev project and App Check is enforced for Cloud Firestore and Authentication in the dev project (2026-11-02).
-- A budget alert on the project's billing account: $75, alerting at 50%, 90% and 100%. Alerts only: it does not cap spending.
-- `npm run emulators` stops cleanly when the terminal running it closes (SIGHUP).
-- `npm audit` at 0, with `overrides` for three nested dependencies (see Known Quirks).
-- The app bar avatar shows the Google profile photo (it had always fallen back to the initial, because `v-avatar` ignores `image` when given a slot).
-- The seeded Dev User has a placeholder profile photo, so the avatar's photo can be checked locally; E2E tests cover the photo and the initial.
-- Demo mode's `LocalStorageBoardRepository` rejects blank titles, matching the Firestore rules.
-- A `/demo` link that goes straight into demo mode (as "Guest" on a first visit), and three sample boards for new demo visitors.
-- An About dialog in the app bar, on every page, linking to the public repository.
-- On the Single Board View, the board and marker tray stay fixed on screen and the writing scrolls inside the board.
-- A one-row marker tray on phones and tablets, scrolling sideways with full-size markers.
-- A one-row board header on phones: a smaller title, with an icon-only save status and the delete button beside it.
-- `npm run emulators:stop` finds the emulators by command line instead of unreliable port listings, so it no longer reports running emulators as stopped.
-- Env files follow one file per Vite mode: `.env.staging` (committed) replaces `.env.production.local`, deploys build with `--mode staging`, and `npm run dev:staging` runs locally against the dev project using an App Check debug token from `.env.staging.local`. The deploy check refuses a debug token.
-- The repository is public, with a `README.md` for visitors (live demo link, screenshot, features, highlights, local setup) that points here for depth. Its screenshot is `docs/screenshots/boards.png`, taken from `/demo` against the local dev server; retake it when the collection view changes noticeably.
+Last updated 2026-11-03.
 
 **Next**
+
 - Nothing scheduled; see Later.
 
 **Later**
+
 - Sketch mode with mouse, touch and pen, as a stretch goal (listed under "On the Horizon" in the README and About dialog): tracked in GitHub issue #20, with the work in PRs #17 (fixed board layout) and #19 (sketch mode). On hold because the fixed layout makes the writing too small on phones; #20 lists the options.
-- A production Firebase project, if wanted: another alias in `.firebaserc`, filling in `.env.production`, and `production`-mode deploy scripts (see Deployment).
+- A production Firebase project, if wanted: another alias in `.firebaserc`, filling in `.env.production`, and `production`-mode deploy scripts (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
+
+**Done**
+
+*Boards*
+
+- Board data layer (`BoardRepository`) and the boards store.
+- Board Collection View: in-memory substring search, board grid, create dialog, empty and error states, whiteboard-style cards and a board count.
+- Single Board View: loading by id with loading, not-found and error states; dry-erase styled sheet, debounced auto-save, save status, and a flush when leaving the board.
+- Marker tray and multi-color writing (a Tiptap editor), with colors stored as `inks` runs and shown in the collection previews.
+- Renaming and deleting boards, from the board cards and from the board page.
+- The board and marker tray stay fixed on screen and the writing scrolls inside the board.
+- A one-row marker tray on phones and tablets, scrolling sideways with full-size markers, and a one-row board header on phones.
+
+*Sessions and access*
+
+- Google sign-in with a route guard and post-login redirect; dismissing the popup is not treated as an error.
+- Owner-only Firestore security rules with tests.
+- Firestore safeguards: an email allowlist for all board access (with a "no access" message on the login page), a board content size cap, and a minimum gap between writes to one board. Denied sign-ins are recorded in `accessRequests`.
+- App Check (reCAPTCHA Enterprise) in the client; the key is registered on the dev project and App Check is enforced for Cloud Firestore and Authentication there (2026-11-02).
+- Demo Mode: a name-only session from the login page, with boards kept in `localStorage`; returning visitors go straight in. `LocalStorageBoardRepository` rejects blank titles, matching the Firestore rules.
+- A `/demo` link that goes straight into demo mode (as "Guest" on a first visit), and three sample boards for new demo visitors.
+
+*App shell*
+
+- A custom Vuetify theme, with light and dark themes and a toggle in the app bar; follows the system setting until one is picked.
+- The marker icon as the tab icon, with PNG fallbacks.
+- The app bar avatar shows the Google profile photo (it had always fallen back to the initial, because `v-avatar` ignores `image` when given a slot).
+- An About dialog in the app bar, on every page, linking to the public repository.
+
+*Tooling and operations*
+
+- Scaffolding, tooling (ESLint, Vitest, Playwright), and Firebase emulator setup. `npm run emulators` seeds an allowlisted Dev User with a placeholder photo; E2E tests cover the avatar's photo and initial.
+- `npm run emulators:stop` clears emulator ports left in use, finding emulators by command line rather than unreliable port listings. `npm run emulators` stops cleanly when the terminal running it closes (SIGHUP).
+- Firebase Hosting deployment to the dev project, with the app pointed at the named `vue-whiteboard-app` database. The dev project is deployed and in use (`npm run deploy` after merging), with the allowlist in place.
+- Env files follow one file per Vite mode: `.env.staging` (committed) replaces `.env.production.local`, deploys build with `--mode staging`, and `npm run dev:staging` runs locally against the dev project using an App Check debug token from `.env.staging.local`. The deploy check refuses a debug token.
+- A budget alert on the project's billing account: $75, alerting at 50%, 90% and 100%. Alerts only: it does not cap spending.
+- `npm audit` at 0, with `overrides` for three nested dependencies (see "Known Quirks" in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#known-quirks)).
+- The repository is public, with a `README.md` for visitors (live demo link, screenshot, features, highlights, local setup).
+- Mermaid diagrams throughout this document, with detail on the UI, development and deployment moved to `docs/`.

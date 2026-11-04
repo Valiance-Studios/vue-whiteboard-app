@@ -1,4 +1,4 @@
-/** Normalizes text for case-insensitive prefix search. */
+/** Normalizes text for case-insensitive search anywhere in the title. */
 export function toSearchable(text: string): string {
   return text.trim().toLowerCase();
 }
