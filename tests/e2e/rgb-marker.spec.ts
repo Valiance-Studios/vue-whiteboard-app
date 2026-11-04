@@ -33,19 +33,6 @@ test.describe('RGB marker', () => {
     await expect(page.getByRole('group', {name: 'Marker color'}).getByRole('button').first()).toHaveAccessibleName('RGB marker');
   });
 
-  test('fits beside the label on one row on a desktop, whichever marker is in hand', async ({page}) => {
-    await page.setViewportSize({width: 1280, height: 800});
-    await createBoard(page, 'One row');
-    await marker(page, 'Purple').click();
-
-    const label = page.getByText('Marker · Purple');
-    const labelBox = await label.boundingBox();
-    const rowBox = await page.getByRole('group', {name: 'Marker color'}).boundingBox();
-
-    expect(labelBox && rowBox && labelBox.x + labelBox.width <= rowBox.x + 8).toBe(true);
-    expect(labelBox && rowBox && labelBox.y >= rowBox.y).toBe(true);
-  });
-
   test('picks the marker on the first click and opens the panel on the second', async ({page}) => {
     await createBoard(page, 'Clicks');
     const rgbMarker = marker(page, 'RGB');

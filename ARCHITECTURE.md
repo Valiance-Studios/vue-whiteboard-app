@@ -77,7 +77,7 @@ Every diagram in this file, and what it depends on. A change to these sources up
 
 ## Application Layers
 
-Dependencies point one way, from the views down to storage. Views and `App.vue` use the stores; components below them only take props and emit events, so they know nothing of storage or sessions. Only `src/firebase/`, `src/repositories/` and the auth store import Firebase, and Tiptap stays inside `WhiteboardSheet` and `src/editor/`.
+Dependencies point one way, from the views down to storage. Views and `App.vue` use the stores; components below them only take props and emit events, so they know nothing of storage or sessions. Only `src/firebase/`, `src/repositories/` and the auth store import Firebase, and Tiptap stays inside `WhiteboardSheet` and `src/editor/`. `App.vue` knows nothing of what a page shows in the app bar: it offers an empty slot (`src/constants/appBar.ts`) that the page teleports its own controls into, so their state stays with the page.
 
 ```mermaid
 flowchart TD
@@ -535,7 +535,7 @@ flowchart TD
 
 ## Project Status
 
-Last updated 2026-11-03.
+Last updated 2026-11-04.
 
 **Next**
 
@@ -557,6 +557,7 @@ Last updated 2026-11-03.
 - An RGB marker, first on the tray: a second click opens a panel with a spectrum and RGB and hex fields. Its color is saved per user.
 - Renaming and deleting boards, from the board cards and from the board page.
 - A full-screen button on the board, showing only the board and marker tray.
+- On tablets and desktops, the board's title and delete button centered in the app bar, giving the board the rest of the window.
 - The board and marker tray stay fixed on screen and the writing scrolls inside the board.
 - A one-row marker tray on phones and tablets, scrolling sideways with full-size markers, and a one-row board header on phones.
 

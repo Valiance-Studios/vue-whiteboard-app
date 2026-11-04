@@ -43,7 +43,7 @@ test.describe('board collection', () => {
 
     await expect(page.getByRole('heading', {name: 'Retro Notes'})).toBeVisible();
 
-    await page.getByRole('link', {name: 'My Boards'}).click();
+    await page.getByRole('link', {name: 'Whiteboard'}).click();
 
     await expect(page).toHaveURL(/\/boards$/);
   });
