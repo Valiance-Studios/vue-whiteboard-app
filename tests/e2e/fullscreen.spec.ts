@@ -85,7 +85,24 @@ test.describe('full screen', () => {
     await enterButton(page).click();
     await expect.poll(() => browserIsFullscreen(page)).toBe(true);
 
+    // Later than an exit the browser forces straight after entering.
+    await page.waitForTimeout(2_100);
     await page.evaluate(() => document.exitFullscreen());
+
+    await expect(enterButton(page)).toBeVisible();
+  });
+
+  test('stays filling the window when the browser forces an exit straight after entering, as iPad Safari does', async ({page}) => {
+    await enterButton(page).click();
+    await expect.poll(() => browserIsFullscreen(page)).toBe(true);
+
+    await page.evaluate(() => document.exitFullscreen());
+    await expect.poll(() => browserIsFullscreen(page)).toBe(false);
+
+    await expect(exitButton(page)).toBeVisible();
+    expect(await page.locator('.whiteboard-sheet').boundingBox()).toEqual({x: 0, y: 0, ...VIEWPORT});
+
+    await exitButton(page).click();
 
     await expect(enterButton(page)).toBeVisible();
   });

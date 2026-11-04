@@ -48,6 +48,12 @@ import {boardExtensions, fromEditorDoc, toEditorContent} from '@/editor';
 import {isHexColor} from '@/utils/color';
 
 /**
+ * Leaving browser full screen this soon after entering was not the user's doing: iPad Safari drops out
+ * as soon as an editable element has focus, and the board's editor always does.
+ */
+const FORCED_FULLSCREEN_EXIT_MS = 2000;
+
+/**
  * The board's writing surface and its marker tray. `writing` is only read when the sheet is created;
  * give the sheet a new `key` to show different writing.
  */
@@ -83,6 +89,8 @@ export default defineComponent({
       ink: DEFAULT_INK as MarkerInk,
       customColor: this.customMarkerColor,
       fullscreen: false,
+      /** When the browser last entered full screen, in epoch ms. */
+      fullscreenEnteredAt: 0,
     };
   },
 
@@ -158,9 +166,14 @@ export default defineComponent({
       }
     },
 
-    /** The browser can leave full screen by itself, e.g. on Escape. */
+    /**
+     * The browser can leave full screen by itself, e.g. on Escape, which ends the sheet's full screen too.
+     * If the browser forced the exit, the sheet stays filling the window, as it does without browser support.
+     */
     onFullscreenChange(): void {
-      if (!document.fullscreenElement) {
+      if (document.fullscreenElement) {
+        this.fullscreenEnteredAt = Date.now();
+      } else if (Date.now() - this.fullscreenEnteredAt >= FORCED_FULLSCREEN_EXIT_MS) {
         this.fullscreen = false;
       }
     },
