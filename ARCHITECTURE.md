@@ -288,7 +288,7 @@ classDiagram
 - **`FirestoreBoardRepository`**: maps Firestore documents to the domain `Board` and applies the owner filter required by the rules.
 - **`LocalStorageBoardRepository`**: demo mode's implementation (see [Demo Mode](#demo-mode)).
 - **`createBoardRepository(session)`** (`src/repositories/index.ts`): the single place that picks an implementation for a session. Callers build a repository per use instead of keeping one, so it always matches the current session and no cache has to be invalidated on sign-in or sign-out. Implementations must therefore be **cheap to construct and hold no state between calls**: `FirestoreBoardRepository` is just a uid alongside the shared `db` singleton, and `LocalStorageBoardRepository` reads and writes `localStorage` on each call rather than caching boards in a field.
-- **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorting. It obtains a repository for the current session per call and discards a load that finishes after the session changed. `renameBoard` and `deleteBoard` update the loaded list only after the repository succeeds. `saveBoardWriting(id, writing)`, `renameBoard` and `deleteBoard` let errors propagate, because the views own the save status and dialogs rather than the store.
+- **`useBoardsStore`** (Pinia): holds all loaded boards, the search term, and loading/error state; the `visibleBoards` getter applies the search and sorts the most recently updated boards first (then by title). It obtains a repository for the current session per call and discards a load that finishes after the session changed. `renameBoard` and `deleteBoard` update the loaded list only after the repository succeeds; `renameBoard` also re-stamps the loaded board's `updatedAt` with the local time, so it moves to the front. `saveBoardWriting(id, writing)`, `renameBoard` and `deleteBoard` let errors propagate, because the views own the save status and dialogs rather than the store.
 - **`useSettingsStore`** (Pinia): the theme choice and the RGB marker's color. `App.vue` calls `load()` whenever the session changes, and applies `themeChoice` to Vuetify. A failed load or save is only logged: a preference still applies for this visit. A session with no saved theme keeps the current one, and with no saved color goes back to the default. A load does not overwrite a choice made while it ran, and is discarded if the session changed.
 - **The theme is always kept in this browser too** (`whiteboard.theme`), whatever the session, because it is needed before the first render, when no session is known yet. So a signed-in user sees their last theme on this device at once, and a theme saved from another device arrives when the settings load. The RGB marker's color is not copied to the browser for Google sessions, so a demo visitor in the same browser never inherits it.
 
@@ -535,7 +535,7 @@ flowchart TD
 
 ## Project Status
 
-Last updated 2026-11-04.
+Last updated 2026-11-11.
 
 **Next**
 
@@ -551,7 +551,7 @@ Last updated 2026-11-04.
 *Boards*
 
 - Board data layer (`BoardRepository`) and the boards store.
-- Board Collection View: in-memory substring search, board grid, create dialog, empty and error states, whiteboard-style cards and a board count.
+- Board Collection View: in-memory substring search, board grid, create dialog, empty and error states, whiteboard-style cards and a board count. Boards are listed most recently updated first.
 - Single Board View: loading by id with loading, not-found and error states; dry-erase styled sheet, debounced auto-save, save status, and a flush when leaving the board.
 - Marker tray and multi-color writing (a Tiptap editor), with colors stored as `inks` runs and shown in the collection previews.
 - An RGB marker, first on the tray: a second click opens a panel with a spectrum and RGB and hex fields. Its color is saved per user.
