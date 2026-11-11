@@ -84,8 +84,9 @@ test.describe('board collection', () => {
 
     await expect(boardCards(page)).toHaveCount(2);
     await expect(page.getByText('2 of 3 boards')).toBeVisible();
-    await expect(boardCards(page).nth(0)).toContainText('Project Alpha');
-    await expect(boardCards(page).nth(1)).toContainText('project beta');
+    // The most recently updated board comes first.
+    await expect(boardCards(page).nth(0)).toContainText('project beta');
+    await expect(boardCards(page).nth(1)).toContainText('Project Alpha');
 
     await search.fill('alpha');
 

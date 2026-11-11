@@ -40,12 +40,16 @@ export const useBoardsStore = defineStore('boards', {
   }),
 
   getters: {
-    /** Boards whose title contains the search term (case-insensitive), sorted by title. */
+    /**
+     * Boards whose title contains the search term (case-insensitive), most recently updated first.
+     * Boards updated at the same time (e.g. demo mode's seed boards) are sorted by title.
+     */
     visibleBoards(state): Board[] {
       const term = toSearchable(state.searchTerm);
       const matches = term ? state.boards.filter((board) => board.titleSearchable.includes(term)) : state.boards;
 
-      return [...matches].sort((a, b) => titleCollator.compare(a.title, b.title));
+      return [...matches].sort((a, b) => b.updatedAt.time.getTime() - a.updatedAt.time.getTime()
+        || titleCollator.compare(a.title, b.title));
     },
   },
 
@@ -80,14 +84,19 @@ export const useBoardsStore = defineStore('boards', {
       return currentRepository().create(input);
     },
 
-    /** Renames a board and updates it in the loaded list. Errors propagate to the caller. */
+    /**
+     * Renames a board and updates it in the loaded list, re-stamping `updatedAt` with the local time
+     * as an estimate of the repository's stamp. Errors propagate to the caller.
+     */
     async renameBoard(id: string, title: string): Promise<void> {
-      await currentRepository().rename(id, title);
+      const user = currentUser();
+      await createBoardRepository(user).rename(id, title);
       const board = this.boards.find((loaded) => loaded.id === id);
 
       if (board) {
         board.title = title.trim();
         board.titleSearchable = toSearchable(board.title);
+        board.updatedAt = {uid: user.uid, time: new Date()};
       }
     },
 

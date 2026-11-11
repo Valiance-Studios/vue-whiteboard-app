@@ -12,10 +12,10 @@ vi.mock('@/repositories', () => ({createBoardRepository: vi.fn()}));
 
 const SESSION_USER = {uid: 'u1', kind: 'google' as const, displayName: 'Test', email: null, photoURL: null};
 
-function makeBoard(id: string, title: string): Board {
-  const stamp = {uid: 'u1', time: new Date('2026-01-01T00:00:00Z')};
+function makeBoard(id: string, title: string, updatedAt = '2026-01-01T00:00:00Z'): Board {
+  const createdAt = {uid: 'u1', time: new Date('2026-01-01T00:00:00Z')};
 
-  return {id, title, titleSearchable: title.toLowerCase(), content: '', inks: [], createdAt: stamp, updatedAt: stamp};
+  return {id, title, titleSearchable: title.toLowerCase(), content: '', inks: [], createdAt, updatedAt: {uid: 'u1', time: new Date(updatedAt)}};
 }
 
 function titlesOf(boards: Board[]): string[] {
@@ -84,8 +84,23 @@ describe('boards store', () => {
       ];
     });
 
-    it('returns all boards sorted by title (case-insensitive, numeric-aware) when not searching', () => {
+    it('sorts boards updated at the same time by title (case-insensitive, numeric-aware)', () => {
       expect(titlesOf(useBoardsStore().visibleBoards)).toEqual(['Project Alpha', 'project beta', 'Retro Notes', 'Sprint 9', 'Sprint 10']);
+    });
+
+    it('returns the most recently updated boards first', () => {
+      const store = useBoardsStore();
+      store.boards = [
+        makeBoard('1', 'Oldest', '2026-01-01T00:00:00Z'),
+        makeBoard('2', 'Newest', '2026-03-01T00:00:00Z'),
+        makeBoard('3', 'Middle', '2026-02-01T00:00:00Z'),
+      ];
+
+      expect(titlesOf(store.visibleBoards)).toEqual(['Newest', 'Middle', 'Oldest']);
+
+      store.searchTerm = 'e';
+
+      expect(titlesOf(store.visibleBoards)).toEqual(['Newest', 'Middle', 'Oldest']);
     });
 
     it('matches the search term anywhere in the title, ignoring case and surrounding whitespace', () => {
@@ -138,6 +153,7 @@ describe('boards store', () => {
 
     expect(repository.rename).toHaveBeenCalledWith('1', '  New Name  ');
     expect(store.boards[0]).toMatchObject({title: 'New Name', titleSearchable: 'new name'});
+    expect(titlesOf(store.visibleBoards)).toEqual(['New Name', 'Other']);
   });
 
   it('keeps the loaded title when a rename fails', async () => {
