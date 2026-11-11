@@ -499,7 +499,7 @@ Each command runs in one Vite mode, and that mode's env file decides which backe
 flowchart LR
     subgraph local["Local commands"]
         dev["npm run dev"]
-        e2e["npm run test:e2e<br/>(Playwright, with npm run dev)"]
+        e2e["npm run test:e2e<br/>(Playwright, with its own<br/>dev server on port 5174)"]
         seed["npm run emulators<br/>(with the seed script)"]
         emu["npm run test:emulator"]
         unit["npx vitest run"]
@@ -580,7 +580,7 @@ Last updated 2026-11-11.
 
 *Tooling and operations*
 
-- Scaffolding, tooling (ESLint, Vitest, Playwright), and Firebase emulator setup. `npm run emulators` seeds an allowlisted Dev User with a placeholder photo; E2E tests cover the avatar's photo and initial.
+- Scaffolding, tooling (ESLint, Vitest, Playwright), and Firebase emulator setup. The E2E tests start their own dev server (port 5174, `development` mode) and never reuse a running one, so they cannot reach the real project through `npm run dev:staging`. `npm run emulators` seeds an allowlisted Dev User with a placeholder photo; E2E tests cover the avatar's photo and initial.
 - `npm run emulators:stop` clears emulator ports left in use, finding emulators by command line rather than unreliable port listings. `npm run emulators` stops cleanly when the terminal running it closes (SIGHUP).
 - Firebase Hosting deployment to the dev project, with the app pointed at the named `vue-whiteboard-app` database. The dev project is deployed and in use (`npm run deploy` after merging), with the allowlist in place.
 - Env files follow one file per Vite mode: `.env.staging` (committed) replaces `.env.production.local`, deploys build with `--mode staging`, and `npm run dev:staging` runs locally against the dev project using an App Check debug token from `.env.staging.local`. The deploy check refuses a debug token.
