@@ -103,6 +103,45 @@ test.describe('board collection', () => {
     await expect(boardCards(page)).toHaveCount(3);
   });
 
+  test('sorts boards by title, created date or last updated, in either order', async ({page}) => {
+    await createBoardAndGoBack(page, 'Charlie');
+    await createBoardAndGoBack(page, 'alpha');
+    await createBoardAndGoBack(page, 'Bravo');
+
+    // Most recently updated first by default.
+    await expect(boardCards(page)).toContainText(['Bravo', 'alpha', 'Charlie']);
+
+    await page.getByRole('button', {name: 'Sort boards'}).click();
+    await page.getByRole('radio', {name: 'Title'}).check();
+    await page.getByRole('radio', {name: /^Ascending/}).check();
+
+    await expect(boardCards(page)).toContainText(['alpha', 'Bravo', 'Charlie']);
+
+    await page.getByRole('radio', {name: 'Date created'}).check();
+
+    await expect(boardCards(page)).toContainText(['Charlie', 'alpha', 'Bravo']);
+
+    await page.getByRole('radio', {name: /^Descending/}).check();
+
+    await expect(boardCards(page)).toContainText(['Bravo', 'alpha', 'Charlie']);
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('radio')).toHaveCount(0);
+    await page.getByRole('textbox', {name: 'Search by title'}).fill('a');
+
+    // The search keeps the chosen order (all three titles contain an "a").
+    await expect(boardCards(page)).toContainText(['Bravo', 'alpha', 'Charlie']);
+
+    // The sort is not saved, so a reload restores the default.
+    await page.getByRole('textbox', {name: 'Search by title'}).clear();
+    await page.getByRole('button', {name: 'Sort boards'}).click();
+    await page.getByRole('radio', {name: 'Title'}).check();
+    await expect(boardCards(page)).toContainText(['Charlie', 'Bravo', 'alpha']);
+    await page.reload();
+
+    await expect(boardCards(page)).toContainText(['Bravo', 'alpha', 'Charlie']);
+  });
+
   test('shows not found for a board that does not exist', async ({page}) => {
     await page.goto('/boards/does-not-exist');
 
