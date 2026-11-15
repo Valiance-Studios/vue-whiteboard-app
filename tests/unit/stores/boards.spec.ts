@@ -6,6 +6,7 @@ import {createPinia, setActivePinia} from 'pinia';
 import {createBoardRepository} from '@/repositories';
 import {useAuthStore} from '@/stores/auth';
 import {useBoardsStore} from '@/stores/boards';
+import {BoardSortField, SortDirection} from '@/utils/boardSort';
 
 vi.mock('@/firebase', () => ({auth: {}, db: {}}));
 vi.mock('@/repositories', () => ({createBoardRepository: vi.fn()}));
@@ -101,6 +102,14 @@ describe('boards store', () => {
       store.searchTerm = 'e';
 
       expect(titlesOf(store.visibleBoards)).toEqual(['Newest', 'Middle', 'Oldest']);
+    });
+
+    it('applies the chosen sort to the search results', () => {
+      const store = useBoardsStore();
+      store.sort = {field: BoardSortField.Title, direction: SortDirection.Descending};
+      store.searchTerm = 'sprint';
+
+      expect(titlesOf(store.visibleBoards)).toEqual(['Sprint 10', 'Sprint 9']);
     });
 
     it('matches the search term anywhere in the title, ignoring case and surrounding whitespace', () => {

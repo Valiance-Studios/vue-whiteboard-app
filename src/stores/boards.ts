@@ -1,9 +1,11 @@
 import type {Board, BoardWriting, NewBoardInput} from '@/types/board';
 import type {BoardRepository} from '@/repositories';
 import type {SessionUser} from '@/types/session';
+import type {BoardSort} from '@/utils/boardSort';
 
 import {defineStore} from 'pinia';
 import {createBoardRepository} from '@/repositories';
+import {DEFAULT_BOARD_SORT, sortBoards} from '@/utils/boardSort';
 import {toSearchable} from '@/utils/search';
 import {useAuthStore} from './auth';
 
@@ -11,11 +13,11 @@ interface BoardsState {
   /** All of the user's boards, as last loaded. */
   boards: Board[];
   searchTerm: string;
+  /** How the collection is ordered. Kept only in memory, so a page reload restores the default. */
+  sort: BoardSort;
   loading: boolean;
   error: string | null;
 }
-
-const titleCollator = new Intl.Collator(undefined, {sensitivity: 'base', numeric: true});
 
 function currentUser(): SessionUser {
   const authStore = useAuthStore();
@@ -35,21 +37,18 @@ export const useBoardsStore = defineStore('boards', {
   state: (): BoardsState => ({
     boards: [],
     searchTerm: '',
+    sort: {...DEFAULT_BOARD_SORT},
     loading: false,
     error: null,
   }),
 
   getters: {
-    /**
-     * Boards whose title contains the search term (case-insensitive), most recently updated first.
-     * Boards updated at the same time (e.g. demo mode's seed boards) are sorted by title.
-     */
+    /** Boards whose title contains the search term (case-insensitive), in the chosen sort order. */
     visibleBoards(state): Board[] {
       const term = toSearchable(state.searchTerm);
       const matches = term ? state.boards.filter((board) => board.titleSearchable.includes(term)) : state.boards;
 
-      return [...matches].sort((a, b) => b.updatedAt.time.getTime() - a.updatedAt.time.getTime()
-        || titleCollator.compare(a.title, b.title));
+      return sortBoards(matches, state.sort);
     },
   },
 

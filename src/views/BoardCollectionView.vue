@@ -13,18 +13,22 @@
         </p>
       </div>
 
-      <v-text-field
-        v-model="searchTerm"
-        class="collection-header__search"
-        aria-label="Search by title"
-        placeholder="Search by title"
-        prepend-inner-icon="mdi-magnify"
-        variant="outlined"
-        bg-color="surface"
-        rounded="lg"
-        hide-details
-        clearable
-      />
+      <div class="collection-header__controls">
+        <board-sort-menu v-model="boardsStore.sort" />
+
+        <v-text-field
+          v-model="searchTerm"
+          class="collection-header__search"
+          aria-label="Search by title"
+          placeholder="Search by title"
+          prepend-inner-icon="mdi-magnify"
+          variant="outlined"
+          bg-color="surface"
+          rounded="lg"
+          hide-details
+          clearable
+        />
+      </div>
     </div>
 
     <v-progress-linear
@@ -127,6 +131,7 @@ import type {Board} from '@/types/board';
 import {defineComponent} from 'vue';
 import {mapStores} from 'pinia';
 import BoardCard from '@/components/BoardCard.vue';
+import BoardSortMenu from '@/components/BoardSortMenu.vue';
 import BoardTitleDialog from '@/components/BoardTitleDialog.vue';
 import DeleteBoardDialog from '@/components/DeleteBoardDialog.vue';
 import {RouteName} from '@/router/routes';
@@ -138,6 +143,7 @@ export default defineComponent({
 
   components: {
     BoardCard,
+    BoardSortMenu,
     BoardTitleDialog,
     DeleteBoardDialog,
   },
@@ -248,9 +254,18 @@ export default defineComponent({
     margin-right: auto;
   }
 
+  // The sort button and search field stay together, wrapping below the heading as one row on narrow screens.
+  &__controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1 1 300px;
+    max-width: 468px;
+  }
+
   &__search {
-    flex: 0 1 400px;
-    min-width: 240px;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 }
 
